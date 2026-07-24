@@ -20,6 +20,29 @@ At 1,000 simultaneous battles this runs on one or two €44/mo Hetzner boxes plu
 about $0.02 per battle in judge fees. Managed video APIs for the same workload
 cost $49k–$360k/month — see `coturn/DEPLOY.md` for the deployment guide.
 
+## Admin panel
+
+A gated moderation dashboard lives on the **backend** at `/admin` (it needs the
+live in-memory battle state, so it can't be on the static frontend). Set
+`ADMIN_TOKEN` (env var) to enable it; leave it unset to disable.
+
+- **URL:** `<backend-url>/admin` — e.g. https://larp-battle-server-production.up.railway.app/admin
+- **Login:** the `ADMIN_TOKEN` value. Session is a 24h-max httpOnly+Secure+SameSite=Strict cookie; login is rate-limited (10 tries / 15 min / IP); token compare is constant-time.
+- **Shows:** every live/recent battle, both players' country + IP + frame counts, a live-refreshing thumbnail of each player's latest captured frame, and the queue/ban stats.
+- **Actions:** end any battle, ban either player's IP (also kills their battle).
+
+## Key env vars (see `.env.example`)
+
+| Var | Purpose |
+|---|---|
+| `OPENAI_API_KEY` | GPT-4.1-mini judge + free moderation. Without it, battles run but verdicts are disabled. |
+| `ADMIN_TOKEN` | Enables `/admin`. Generate with `openssl rand -hex 32`. |
+| `TRUST_PROXY_HOPS` | Reverse-proxy hops in front of the app (Railway = 1, +Cloudflare = 2, local = 0). Wrong value = spoofable client IPs / broken bans. |
+| `MAX_CONN_PER_IP` | Per-IP WebSocket cap (DoS guard). Default 8. |
+| `ALLOW_SAME_IP_MATCH` | `true` lets two connections from one IP match (solo testing / low-traffic launch). Set `false` for real production. |
+| `BATTLE_DURATION_MS` | Battle length. Default 60000 (1 minute). |
+| `TURN_HOST` / `TURN_SECRET` | Self-hosted coturn for the ~15% of calls that can't connect P2P. Without them, STUN-only. |
+
 ## Quick start (local)
 
 ```bash
