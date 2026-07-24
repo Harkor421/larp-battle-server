@@ -334,6 +334,23 @@
     requestAnimationFrame(frame);
   }
 
+  function midpoint(it) {
+    return ((Number(it.est_value_usd_low) || 0) + (Number(it.est_value_usd_high) || 0)) / 2;
+  }
+  function isCounted(it) { return it && it.counted !== false; }
+  // Same weighting the backend scores with: TOP ITEM is the item that
+  // contributed the most to the score, not merely the biggest sticker price
+  // (a convincing fake with a huge sticker still contributes little).
+  const AUTH_FACTOR = { likely_genuine: 1.0, uncertain: 0.2, likely_replica: 0.05 };
+  function itemWeight(it) {
+    if (!isCounted(it)) return 0;
+    const low = Number(it.est_value_usd_low) || 0;
+    const conf = Math.max(0, Math.min(1, Number(it.confidence) || 0));
+    const auth = AUTH_FACTOR[it.authenticity] ?? 0.2;
+    const base = it.authenticity === "likely_genuine" && conf >= 0.6 ? midpoint(it) : low;
+    return Math.max(0, base * conf * auth);
+  }
+
   function renderItems(ul, items) {
     ul.innerHTML = "";
     const list = Array.isArray(items) ? items.slice() : [];
@@ -344,15 +361,28 @@
       ul.appendChild(li);
       return;
     }
-    // Decisive first, then by value.
-    list.sort((a, b) => {
-      const da = a.decisive ? 1 : 0, db = b.decisive ? 1 : 0;
-      if (da !== db) return db - da;
-      return (b.est_value_usd_high || 0) - (a.est_value_usd_high || 0);
+
+    // TOP ITEM = the biggest contributor to the score (and any co-headliner
+    // within 70% of it), among COUNTED items only. Weighted, not raw sticker.
+    const counted = list.filter(isCounted).sort((a, b) => itemWeight(b) - itemWeight(a));
+    const top = counted.length ? itemWeight(counted[0]) : 0;
+    const decisive = new Set();
+    counted.forEach((it, i) => {
+      if (top > 0 && (i === 0 || itemWeight(it) >= 0.7 * top) && decisive.size < 3) decisive.add(it);
     });
+
+    // Order: counted by contribution desc, then uncounted by sticker value desc.
+    list.sort((a, b) => {
+      const ca = isCounted(a) ? 1 : 0, cb = isCounted(b) ? 1 : 0;
+      if (ca !== cb) return cb - ca;
+      return ca ? itemWeight(b) - itemWeight(a) : midpoint(b) - midpoint(a);
+    });
+
     list.forEach((item, i) => {
+      const counts = isCounted(item);
+      const isDecisive = decisive.has(item);
       const li = document.createElement("li");
-      li.className = "item" + (item.decisive ? " decisive" : "");
+      li.className = "item" + (isDecisive ? " decisive" : "") + (counts ? "" : " uncounted");
       li.style.animationDelay = (0.12 + i * 0.06) + "s";
 
       const main = document.createElement("div");
@@ -360,15 +390,20 @@
       const name = document.createElement("div");
       name.className = "item-name";
       name.textContent = item.name || "Item";
-      if (item.decisive) {
+      if (isDecisive) {
         const tag = document.createElement("span");
-        tag.className = "tag"; tag.textContent = "DECISIVE";
+        tag.className = "tag"; tag.textContent = "TOP ITEM";
+        name.appendChild(tag);
+      } else if (!counts) {
+        const tag = document.createElement("span");
+        tag.className = "tag muted"; tag.textContent = "NOT COUNTED";
         name.appendChild(tag);
       }
       const sub = document.createElement("div");
       sub.className = "item-sub";
       sub.textContent = item.brand_or_model || "unidentified";
-      if (item.authenticity === "likely_replica") {
+      if (!counts) sub.append(" · shown on screen, doesn't count");
+      else if (item.authenticity === "likely_replica") {
         const r = document.createElement("span");
         r.className = "repl"; r.textContent = " · likely replica";
         sub.appendChild(r);
@@ -378,7 +413,7 @@
       main.appendChild(name); main.appendChild(sub);
 
       const val = document.createElement("div");
-      val.className = "item-val";
+      val.className = "item-val" + (counts ? "" : " struck");
       val.textContent = `${money(item.est_value_usd_low)}–${money(item.est_value_usd_high)}`;
 
       li.appendChild(main); li.appendChild(val);
@@ -396,7 +431,7 @@
     const tie = verdict.winner === "tie" || !verdict.winner;
 
     const result = $("verdictResult");
-    result.textContent = tie ? "Draw" : iWon ? "You win" : "You lose";
+    result.textContent = tie ? "Draw" : iWon ? "You win" : "You got larped";
     result.className = "verdict-result " + (tie ? "tie" : iWon ? "win" : "lose");
     $("verdictReason").textContent = verdict.commentary || "";
 
@@ -407,6 +442,8 @@
     sideThem.classList.toggle("win", !iWon && !tie);
     sideThem.classList.toggle("lose", iWon && !tie);
 
+    // Totals/score/winner are computed server-side (weighted, tamper-proof) and
+    // trusted here so the number, the score bar, and the outcome always agree.
     $("totalYou").textContent = money(me.total_value_usd);
     $("totalThem").textContent = money(them.total_value_usd);
     renderItems($("itemsYou"), me.items);
