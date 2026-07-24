@@ -43,8 +43,10 @@ export const config = {
   // Admin panel (disabled unless ADMIN_TOKEN is set)
   adminToken: process.env.ADMIN_TOKEN || "",
 
-  // Frames
-  maxFrameBytes: num("MAX_FRAME_BYTES", 400_000),
+  // Frames (high quality for accurate item identification)
+  maxFrameBytes: num("MAX_FRAME_BYTES", 2_000_000),
+  frameMaxEdge: num("FRAME_MAX_EDGE", 1280),
+  frameJpegQuality: num("FRAME_JPEG_QUALITY", 92),
   maxStoredFramesPerPlayer: num("MAX_STORED_FRAMES_PER_PLAYER", 180),
   minFrameGapMs: num("MIN_FRAME_GAP_MS", 700),
   dedupeHammingThreshold: num("DEDUPE_HAMMING_THRESHOLD", 5),

@@ -152,7 +152,7 @@
   async function initMedia() {
     try {
       localStream = await navigator.mediaDevices.getUserMedia({
-        video: { width: { ideal: 1280 }, height: { ideal: 720 } },
+        video: { width: { ideal: 1920 }, height: { ideal: 1080 } },
         audio: true,
       });
       localVideo.srcObject = localStream;
@@ -288,11 +288,16 @@
       if (!track || track.readyState !== "live") return;
       const vw = localVideo.videoWidth, vh = localVideo.videoHeight;
       if (!vw || !vh) return;
-      const scale = Math.min(1, 768 / Math.max(vw, vh));
+      // Capture at high quality (up to 1280px long edge) so the judge can read
+      // watch dials, logos, and model numbers. The server re-encodes to match.
+      const scale = Math.min(1, 1280 / Math.max(vw, vh));
       captureCanvas.width = Math.round(vw * scale);
       captureCanvas.height = Math.round(vh * scale);
-      captureCanvas.getContext("2d").drawImage(localVideo, 0, 0, captureCanvas.width, captureCanvas.height);
-      const blob = await new Promise((r) => captureCanvas.toBlob(r, "image/jpeg", 0.75));
+      const cctx = captureCanvas.getContext("2d");
+      cctx.imageSmoothingEnabled = true;
+      cctx.imageSmoothingQuality = "high";
+      cctx.drawImage(localVideo, 0, 0, captureCanvas.width, captureCanvas.height);
+      const blob = await new Promise((r) => captureCanvas.toBlob(r, "image/jpeg", 0.92));
       if (!blob || !battle) return;
       fetch(apiUrl(`/api/battle/${battle.id}/frame`), {
         method: "POST",

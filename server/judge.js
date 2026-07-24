@@ -49,7 +49,7 @@ const VERDICT_SCHEMA = {
                 counted: {
                   type: "boolean",
                   description:
-                    "True only if this is a PHYSICAL object credibly shown on camera and should count toward the total. False for anything shown ON A SCREEN (crypto/bank balances, apps, a photo or video of a car or item), digital-only assets, or displays that are trivially faked. Still list uncounted items (with a value), but they must not count toward the total or the score.",
+                    "True if this counts toward the total. Counts: PHYSICAL objects credibly shown on camera, AND cryptocurrency/bank/brokerage balances shown on a screen (these count at face value). Does NOT count (false): photos/videos/screenshots of a physical item (a car, watch, house), and items the player does not own (store displays, rentals, borrowed). Still list uncounted items with a value.",
                 },
                 brand_or_model: {
                   type: "string",
@@ -104,16 +104,20 @@ Your job:
      is NOT proof it is real — a webcam cannot authenticate a Rolex, a Birkin, or a supercar);
      likely_replica when there are tell-tale signs of a fake. When in doubt, use uncertain.
 
-4. Mark each item "counted" (true/false). This is the anti-cheat gate:
-   counted=false (does NOT count toward the total) for ALL of the following:
-   - Anything shown ON A SCREEN or as an image: a crypto/bank balance, a trading app, a photo,
-     video, screenshot, poster, magazine page, or printout — including a physical paper photo.
-     Count the paper, not the object depicted on it.
-   - Anything the player does not plausibly OWN and control: a car on a public street, in a
-     dealership/showroom, a rental or test-drive, goods in a store/boutique/museum display (price
-     tags, security cases, multiple identical units, store signage), or items handed in by someone
-     off-camera / pooled between people to pad one player.
-   - Anything visible ONLY as a reflection, or a screen's content seen via a mirror.
+4. Mark each item "counted" (true/false).
+   COUNTS as real money (counted=true):
+   - Physical objects the player credibly owns and shows on camera.
+   - A cryptocurrency, bank, brokerage, or trading-app balance shown on a screen — treat it as
+     AUTHENTIC and count it at FACE VALUE. Set authenticity=likely_genuine, confidence high when the
+     number is clearly legible, and set both est_value_usd_low and est_value_usd_high to the shown
+     balance in USD (convert other currencies). Say the amount in brand_or_model.
+   Does NOT count (counted=false):
+   - A photo, video, or screenshot of a PHYSICAL item (a car, watch, mansion), a poster, magazine
+     page, or printout — including a physical paper photo. Count the paper, not the object depicted.
+   - Items the player does not plausibly OWN: a car on a public street, in a dealership/showroom, a
+     rental, goods in a store/boutique/museum display (price tags, security cases, store signage),
+     or items handed in off-camera / pooled between people to pad one player.
+   - Anything visible ONLY as a reflection, or a physical item seen via a mirror.
    Treat a vehicle as owned only if the player is clearly its keeper (in the driver seat with keys,
    in their own driveway/garage), not merely standing near it. For anything uncounted, still list it
    with an honest value but set counted=false and explain briefly in brand_or_model.
@@ -141,8 +145,8 @@ Your job:
 8. winner: the player with the higher adjusted total. Tie only if within ~15% or both near zero.
 9. Write short, punchy, good-natured commentary (a game — entertaining, never cruel, only about the
    items, never the players' bodies/appearance). Say why the winner won, name their top item, and if
-   the loser leaned on something that didn't count (a screen balance, a photo, a car they don't own,
-   a stack of cash), call it out briefly.
+   the loser leaned on something that didn't count (a photo of a car, a car they don't own, a stack
+   of cash), call it out briefly.
 
 Frames labeled PLAYER A belong to player A; frames labeled PLAYER B belong to player B.
 If one player's frames are missing or show nothing, score them zero and say so.
@@ -159,10 +163,9 @@ function frameParts(frames) {
     type: "image_url",
     image_url: {
       url: `data:image/jpeg;base64,${f.buf.toString("base64")}`,
-      // "auto" lets the model pick fidelity per image. Frames are already
-      // capped at 768px; forcing "high" tiled every one into 512px patches,
-      // multiplying image-token cost several-fold for little accuracy gain.
-      detail: "auto",
+      // High detail so the model reads fine text (watch models, logos, screen
+      // balances) at the frames' full resolution.
+      detail: "high",
     },
   }));
 }
