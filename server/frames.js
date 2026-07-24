@@ -1,9 +1,15 @@
 import sharp from "sharp";
 
+// Reject images that decode to more than this many pixels. A small JPEG can
+// decompress to a huge raw buffer ("decompression bomb"); cap the decode so a
+// crafted upload can't exhaust server memory. 40MP comfortably covers any real
+// webcam frame.
+const SHARP_OPTS = { limitInputPixels: 40_000_000 };
+
 // 8x8 average hash — cheap perceptual hash used to skip near-identical
 // consecutive frames so the judge isn't billed for 120 copies of the same shot.
 export async function averageHash(jpegBuffer) {
-  const pixels = await sharp(jpegBuffer)
+  const pixels = await sharp(jpegBuffer, SHARP_OPTS)
     .grayscale()
     .resize(8, 8, { fit: "fill" })
     .raw()
@@ -33,7 +39,7 @@ export function hammingDistance(a, b) {
 // Normalize an uploaded frame: cap the long edge at 768px (keeps GPT-4.1-mini
 // image-token cost predictable) and re-encode as JPEG.
 export async function normalizeFrame(jpegBuffer) {
-  return sharp(jpegBuffer)
+  return sharp(jpegBuffer, SHARP_OPTS)
     .rotate() // honor EXIF orientation
     .resize(768, 768, { fit: "inside", withoutEnlargement: true })
     .jpeg({ quality: 78 })

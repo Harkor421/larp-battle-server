@@ -372,8 +372,10 @@
   function showVerdict(myRole, verdict) {
     stopCapture();
     teardownBattle();
-    const me = verdict.players.find((p) => p.player === myRole);
-    const them = verdict.players.find((p) => p.player !== myRole);
+    verdict = verdict || {};
+    const players = Array.isArray(verdict.players) ? verdict.players : [];
+    const me = players.find((p) => p && p.player === myRole);
+    const them = players.find((p) => p && p.player !== myRole);
     const iWon = verdict.winner === myRole;
     const tie = verdict.winner === "tie";
 

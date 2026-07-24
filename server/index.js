@@ -7,6 +7,7 @@ import { WebSocketServer, WebSocket } from "ws";
 import geoip from "geoip-lite";
 
 import { config } from "./config.js";
+import { mountAdmin } from "./admin.js";
 import { judgeBattle, moderateFrame } from "./judge.js";
 import {
   averageHash,
@@ -28,6 +29,8 @@ const battles = new Map();
 let queue = [];
 /** ip -> { reason, ts } */
 const bans = new Map();
+/** ip -> open connection count (per-IP cap to blunt single-source DoS) */
+const connByIp = new Map();
 
 const BANS_FILE = path.join(config.dataDir, "bans.json");
 const REPORTS_DIR = path.join(config.dataDir, "reports");
@@ -59,12 +62,23 @@ function banIp(ip, reason) {
 // ---------------------------------------------------------------------------
 
 function clientIp(req) {
-  // Behind Cloudflare / a reverse proxy, trust the forwarded header.
-  const cf = req.headers["cf-connecting-ip"];
-  if (cf) return String(cf);
+  // x-forwarded-for is "client, proxy1, proxy2, ...": each proxy APPENDS the
+  // address it received the connection from, so a client can forge leftmost
+  // entries but not the ones our trusted proxies appended. With H trusted hops,
+  // the real client IP is the H-th entry from the right. Taking the leftmost
+  // entry (or any raw client-supplied header) would let anyone spoof their IP
+  // to evade bans or frame an innocent IP into a ban.
+  const socketIp = req.socket?.remoteAddress || "unknown";
+  const hops = config.trustProxyHops;
+  if (hops === 0) return socketIp;
   const xff = req.headers["x-forwarded-for"];
-  if (xff) return String(xff).split(",")[0].trim();
-  return req.socket.remoteAddress || "unknown";
+  if (!xff) return socketIp;
+  const chain = String(xff)
+    .split(",")
+    .map((s) => s.trim())
+    .filter(Boolean);
+  if (chain.length === 0) return socketIp;
+  return chain[chain.length - hops] || chain[0];
 }
 
 function countryOf(req) {
@@ -190,7 +204,10 @@ function destroyBattle(id) {
   for (const role of ["A", "B"]) {
     const p = battle.players[role];
     p.frames = [];
-    if (p.ws) p.ws.battleId = null;
+    // Only detach the socket if it's still pointing at THIS battle — the player
+    // may already be in a newer battle (e.g. hit "Next") by the time this
+    // delayed cleanup fires.
+    if (p.ws && p.ws.battleId === id) p.ws.battleId = null;
   }
   battles.delete(id);
 }
@@ -200,7 +217,14 @@ function tryMatch() {
   queue = queue.filter((e) => e.ws.readyState === WebSocket.OPEN);
   while (queue.length >= 2) {
     const a = queue.shift();
-    const b = queue.shift();
+    // Don't match a player against another connection from their own IP — that
+    // is both a self-battle exploit and pointless. Find the first different IP.
+    const j = queue.findIndex((e) => e.ip !== a.ip);
+    if (j === -1) {
+      queue.unshift(a); // no eligible partner yet; wait for someone else
+      break;
+    }
+    const b = queue.splice(j, 1)[0];
     const battle = {
       id: crypto.randomUUID(),
       state: "connecting",
@@ -282,6 +306,13 @@ wss.on("connection", (ws, req) => {
     ws.close();
     return;
   }
+  const openForIp = (connByIp.get(ip) || 0) + 1;
+  if (openForIp > config.maxConnPerIp) {
+    send(ws, { type: "banned", reason: "Too many connections from your network." });
+    ws.close();
+    return;
+  }
+  connByIp.set(ip, openForIp);
   ws.ip = ip;
   ws.country = countryOf(req);
   ws.isAlive = true;
@@ -338,6 +369,9 @@ wss.on("connection", (ws, req) => {
   ws.on("close", () => {
     queue = queue.filter((e) => e.ws !== ws);
     leaveBattle(ws);
+    const n = (connByIp.get(ws.ip) || 1) - 1;
+    if (n <= 0) connByIp.delete(ws.ip);
+    else connByIp.set(ws.ip, n);
   });
 });
 
@@ -423,6 +457,16 @@ app.use((req, res, next) => {
   next();
 });
 
+// Gated admin panel (before static so /admin routes take precedence).
+mountAdmin(app, express, {
+  battles,
+  getQueue: () => queue,
+  bans,
+  banIp,
+  abortBattle,
+  clientIp,
+});
+
 app.use(express.static("public"));
 
 app.get("/healthz", (_req, res) => {
@@ -434,10 +478,9 @@ app.get("/healthz", (_req, res) => {
   });
 });
 
-app.get("/api/ice", (req, res) => {
-  if (bans.has(clientIp(req))) return res.status(403).json({ error: "banned" });
-  res.json({ iceServers: turnCredentials() });
-});
+// Note: TURN credentials are handed out only inside the authenticated `matched`
+// WebSocket message (see tryMatch), never via an open HTTP endpoint — otherwise
+// anyone could mint relay credentials and use the TURN server as a free proxy.
 
 app.post(
   "/api/battle/:id/frame",
@@ -453,6 +496,7 @@ app.post(
       : null;
     if (!role) return res.status(403).json({ error: "bad token" });
     const player = battle.players[role];
+    if (bans.has(player.ip)) return res.status(403).json({ error: "banned" });
 
     const now = Date.now();
     if (now - player.lastFrameAt < config.minFrameGapMs) {
@@ -469,7 +513,7 @@ app.post(
       // Moderation on every Nth *received* frame (free via OpenAI).
       if (
         config.moderationEveryNFrames > 0 &&
-        player.framesReceived % config.moderationEveryNFrames === 1
+        (player.framesReceived - 1) % config.moderationEveryNFrames === 0
       ) {
         moderateFrame(buf).then((cats) => {
           if (cats.length && battles.has(battle.id) && battle.state === "live") {

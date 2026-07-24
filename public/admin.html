@@ -1,0 +1,197 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="robots" content="noindex, nofollow" />
+  <title>Larp Battle — Admin</title>
+  <style>
+    :root { --bg:#0d0f14; --panel:#161a22; --panel2:#1d222d; --text:#e8eaf0; --muted:#8b93a5; --accent:#f5b301; --red:#ff5d5d; --green:#43d17c; }
+    * { box-sizing:border-box; margin:0; padding:0; }
+    body { background:var(--bg); color:var(--text); font-family:-apple-system,"Segoe UI",Roboto,Arial,sans-serif; }
+    /* login */
+    #login { position:fixed; inset:0; display:flex; align-items:center; justify-content:center; }
+    .login-card { background:var(--panel); border:1px solid #2a3040; border-radius:14px; padding:32px; width:340px; }
+    .login-card h1 { font-size:1.3rem; margin-bottom:16px; }
+    input[type=password] { width:100%; padding:12px; border-radius:8px; border:1px solid #2a3040; background:var(--panel2); color:var(--text); font-size:1rem; margin-bottom:12px; }
+    button { background:var(--accent); color:#14110a; border:0; border-radius:8px; padding:10px 16px; font-weight:700; cursor:pointer; font-size:.95rem; }
+    button.red { background:var(--red); color:#fff; }
+    button.ghost { background:transparent; color:var(--muted); border:1px solid #2a3040; }
+    .err { color:var(--red); font-size:.85rem; min-height:1.2em; margin-bottom:8px; }
+    /* dashboard */
+    #dash { display:none; padding:16px; max-width:1400px; margin:0 auto; }
+    header.bar { display:flex; align-items:center; gap:16px; padding:8px 0 16px; flex-wrap:wrap; }
+    header.bar h1 { font-size:1.2rem; }
+    .stats { display:flex; gap:18px; color:var(--muted); flex:1; flex-wrap:wrap; }
+    .stats b { color:var(--text); }
+    .stat-live b { color:var(--green); }
+    .grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(360px,1fr)); gap:14px; }
+    .card { background:var(--panel); border:1px solid #2a3040; border-radius:12px; padding:12px; }
+    .card.live { border-color:#2f5d3f; }
+    .card-head { display:flex; justify-content:space-between; align-items:center; margin-bottom:8px; font-size:.85rem; }
+    .badge { padding:2px 8px; border-radius:6px; font-size:.75rem; font-weight:700; }
+    .b-live { background:#123; color:var(--green); }
+    .b-other { background:#222; color:var(--muted); }
+    .players { display:grid; grid-template-columns:1fr 1fr; gap:8px; }
+    .p { background:var(--panel2); border-radius:8px; padding:8px; }
+    .p img { width:100%; aspect-ratio:4/3; object-fit:cover; border-radius:6px; background:#000; display:block; margin-bottom:6px; }
+    .p .meta { font-size:.78rem; color:var(--muted); line-height:1.5; word-break:break-all; }
+    .p .meta b { color:var(--text); }
+    .row { display:flex; gap:6px; margin-top:8px; }
+    .row button { flex:1; padding:6px; font-size:.78rem; }
+    .empty { color:var(--muted); text-align:center; padding:40px; }
+    .bans { margin-top:20px; color:var(--muted); font-size:.85rem; }
+    .bans code { color:var(--text); }
+  </style>
+</head>
+<body>
+  <div id="login">
+    <form class="login-card" id="loginForm">
+      <h1>🔐 Larp Battle Admin</h1>
+      <div class="err" id="loginErr"></div>
+      <input type="password" id="pw" placeholder="Admin token" autocomplete="current-password" />
+      <button type="submit">Sign in</button>
+    </form>
+  </div>
+
+  <div id="dash">
+    <header class="bar">
+      <h1>⚔️ Live Battles</h1>
+      <div class="stats">
+        <span class="stat-live">Live: <b id="sLive">0</b></span>
+        <span>Total tracked: <b id="sTotal">0</b></span>
+        <span>In queue: <b id="sQueue">0</b></span>
+        <span>Bans: <b id="sBans">0</b></span>
+        <span id="sUpdated" style="opacity:.6"></span>
+      </div>
+      <button class="ghost" id="logoutBtn">Log out</button>
+    </header>
+    <div class="grid" id="grid"></div>
+    <div class="empty" id="empty">No battles right now.</div>
+    <div class="bans" id="bansBox"></div>
+  </div>
+
+  <script>
+    const $ = (id) => document.getElementById(id);
+    let pollTimer = null;
+
+    function flag(cc) {
+      if (!cc || cc.length !== 2 || /[^A-Za-z]/.test(cc)) return "🏳️";
+      const A = 0x1f1e6, u = cc.toUpperCase();
+      return String.fromCodePoint(A + u.charCodeAt(0) - 65) + String.fromCodePoint(A + u.charCodeAt(1) - 65);
+    }
+
+    async function api(path, opts) {
+      const r = await fetch(path, Object.assign({ credentials: "same-origin" }, opts || {}));
+      return r;
+    }
+
+    $("loginForm").addEventListener("submit", async (e) => {
+      e.preventDefault();
+      $("loginErr").textContent = "";
+      const r = await api("/admin/login", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ password: $("pw").value }),
+      });
+      if (r.ok) { $("pw").value = ""; showDash(); }
+      else {
+        const j = await r.json().catch(() => ({}));
+        $("loginErr").textContent = j.error || "Login failed";
+      }
+    });
+
+    $("logoutBtn").addEventListener("click", async () => {
+      await api("/admin/logout", { method: "POST" });
+      clearInterval(pollTimer);
+      $("dash").style.display = "none";
+      $("login").style.display = "flex";
+    });
+
+    function showDash() {
+      $("login").style.display = "none";
+      $("dash").style.display = "block";
+      poll();
+      clearInterval(pollTimer);
+      pollTimer = setInterval(poll, 2000);
+    }
+
+    function playerHtml(b, role) {
+      const p = b[role];
+      const canThumb = b.state === "live" && p.storedFrames > 0;
+      const img = canThumb
+        ? `<img src="/admin/api/battle/${b.id}/frame/${role}?t=${Date.now()}" alt="frame" onerror="this.style.visibility='hidden'"/>`
+        : `<img alt="no frame" style="visibility:hidden"/>`;
+      return `<div class="p">
+        ${img}
+        <div class="meta">
+          <div>${flag(p.country)} <b>${role}</b> · ${p.country}</div>
+          <div>IP: <b>${p.ip}</b></div>
+          <div>frames: ${p.storedFrames} stored / ${p.framesReceived} recv</div>
+        </div>
+        <div class="row">
+          <button class="red" onclick="banIp('${p.ip}')">Ban ${role}</button>
+        </div>
+      </div>`;
+    }
+
+    function cardHtml(b) {
+      const live = b.state === "live";
+      return `<div class="card ${live ? "live" : ""}">
+        <div class="card-head">
+          <span class="badge ${live ? "b-live" : "b-other"}">${b.state}${b.secondsLeft != null ? " · " + b.secondsLeft + "s" : ""}${b.winner ? " · winner " + b.winner : ""}</span>
+          <code style="color:#8b93a5">${b.id.slice(0, 8)}</code>
+        </div>
+        <div class="players">${playerHtml(b, "A")}${playerHtml(b, "B")}</div>
+        <div class="row">
+          <button class="ghost" onclick="killBattle('${b.id}')">End battle</button>
+        </div>
+      </div>`;
+    }
+
+    async function poll() {
+      const r = await api("/admin/api/state");
+      if (r.status === 401) {
+        clearInterval(pollTimer);
+        $("dash").style.display = "none";
+        $("login").style.display = "flex";
+        return;
+      }
+      if (!r.ok) return;
+      const d = await r.json();
+      $("sLive").textContent = d.liveBattles;
+      $("sTotal").textContent = d.totalBattles;
+      $("sQueue").textContent = d.queued;
+      $("sBans").textContent = d.bans.length;
+      $("sUpdated").textContent = "updated " + new Date(d.now).toLocaleTimeString();
+      $("grid").innerHTML = d.battles.map(cardHtml).join("");
+      $("empty").style.display = d.battles.length ? "none" : "block";
+      $("bansBox").innerHTML = d.bans.length
+        ? "<strong>Banned IPs:</strong> " + d.bans.map((x) => `<code>${x.ip}</code> (${x.reason || ""})`).join(" · ")
+        : "";
+    }
+
+    window.killBattle = async (id) => {
+      if (!confirm("End this battle for both players?")) return;
+      await api(`/admin/api/battle/${id}/kill`, { method: "POST" });
+      poll();
+    };
+    window.banIp = async (ip) => {
+      const reason = prompt("Ban " + ip + " — reason?", "admin ban");
+      if (reason === null) return;
+      await api("/admin/api/ban", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ip, reason }),
+      });
+      poll();
+    };
+
+    // If already authed (valid cookie), jump straight to the dashboard.
+    (async () => {
+      const r = await api("/admin/api/state");
+      if (r.ok) showDash();
+    })();
+  </script>
+</body>
+</html>
