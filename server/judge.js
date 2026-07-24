@@ -39,17 +39,17 @@ const VERDICT_SCHEMA = {
                 "est_value_usd_high",
                 "confidence",
                 "authenticity",
-                "decisive",
+                "counted",
               ],
               properties: {
                 name: {
                   type: "string",
                   description: "Short item name, e.g. 'wristwatch', 'sports car'",
                 },
-                decisive: {
+                counted: {
                   type: "boolean",
                   description:
-                    "True for the small number of items that most determined this player's score (the headline pieces).",
+                    "True only if this is a PHYSICAL object credibly shown on camera and should count toward the total. False for anything shown ON A SCREEN (crypto/bank balances, apps, a photo or video of a car or item), digital-only assets, or displays that are trivially faked. Still list uncounted items (with a value), but they must not count toward the total or the score.",
                 },
                 brand_or_model: {
                   type: "string",
@@ -72,7 +72,7 @@ const VERDICT_SCHEMA = {
           total_value_usd: {
             type: "number",
             description:
-              "Sum of midpoint values, discounted for low confidence and replica risk",
+              "Sum of the midpoint values of COUNTED items only (counted=true), discounted for low confidence and replica risk. Uncounted (on-screen/digital) items contribute 0.",
           },
           notes: { type: "string" },
         },
@@ -93,23 +93,56 @@ You receive still frames captured from each player's camera during the battle.
 
 Your job:
 1. For EACH player, list every distinct item of monetary value visibly shown. Count each distinct
-   item ONCE even if it appears in many frames. Ignore ordinary background objects (furniture,
-   basic phones/laptops used to film, generic clothing) unless clearly luxury.
+   item ONCE even if it appears in many frames (including its reflection in a mirror). Ignore
+   ordinary background objects (furniture, basic phones/laptops used to film, generic clothing).
 2. Identify brand and model where the frames allow it. If you cannot identify it, say "unidentified"
    and value it conservatively.
-3. Estimate a fair USED-MARKET value range in USD for each item. Be skeptical: poor lighting,
-   implausible combinations, or tell-tale flaws should lower confidence and raise replica suspicion.
-   Discount likely replicas to replica prices.
-4. Compute each player's total (midpoints, discounted by confidence and authenticity).
-5. Give each player an overall flex score from 1 to 10 (one decimal is fine): 10 is a jaw-dropping
-   display of genuine wealth, 5 is a few solid items, 1 is nothing of value. The winner must have
-   the higher score.
-6. Mark the small number of "decisive" items (the headline pieces) that most drove each score.
-7. Declare the winner: the player whose shown items are worth more. Declare a tie only when the
-   scores are within about 0.5 of each other or neither player showed anything of value.
-8. Write short, punchy, good-natured commentary (this is a game — be entertaining, never cruel,
-   no comments about the players' bodies or appearance, only their items). State plainly why the
-   winner won and which items decided it.
+3. Estimate a fair USED-MARKET value range in USD for each item, and set:
+   - confidence (0-1): how sure you are of the identification.
+   - authenticity: likely_genuine ONLY when authenticating detail is actually legible (hallmarks,
+     serials, craftsmanship); uncertain when it merely looks right (recognizing a brand silhouette
+     is NOT proof it is real — a webcam cannot authenticate a Rolex, a Birkin, or a supercar);
+     likely_replica when there are tell-tale signs of a fake. When in doubt, use uncertain.
+
+4. Mark each item "counted" (true/false). This is the anti-cheat gate:
+   counted=false (does NOT count toward the total) for ALL of the following:
+   - Anything shown ON A SCREEN or as an image: a crypto/bank balance, a trading app, a photo,
+     video, screenshot, poster, magazine page, or printout — including a physical paper photo.
+     Count the paper, not the object depicted on it.
+   - Anything the player does not plausibly OWN and control: a car on a public street, in a
+     dealership/showroom, a rental or test-drive, goods in a store/boutique/museum display (price
+     tags, security cases, multiple identical units, store signage), or items handed in by someone
+     off-camera / pooled between people to pad one player.
+   - Anything visible ONLY as a reflection, or a screen's content seen via a mirror.
+   Treat a vehicle as owned only if the player is clearly its keeper (in the driver seat with keys,
+   in their own driveway/garage), not merely standing near it. For anything uncounted, still list it
+   with an honest value but set counted=false and explain briefly in brand_or_model.
+
+5. Special valuation rules (these prevent easy cheats):
+   - Cash, currency stacks, poker chips, gold bars, bullion: trivially faked with prop money.
+     Set authenticity=uncertain and value the counted amount at no more than ~$200 regardless of
+     apparent denomination.
+   - Vehicles: only value what is actually and fully visible. A badge, wheel, or single panel alone
+     is not an intact car — set confidence <= 0.4 and value at no more than 25% of the model's price.
+   - Loose stones / diamond jewelry: carat, clarity, colour and cut are not observable on a webcam,
+     and CZ/moissanite look identical. Set authenticity=uncertain, confidence <= 0.3, and value only
+     the setting metal (stones near replica price) unless a certificate is legible.
+   - A convincing but unverifiable high-value branded item is authenticity=uncertain, not genuine.
+
+6. total_value_usd: the game counts each COUNTED item as base × confidence × authenticity-factor
+   (factors: likely_genuine = 1.0, uncertain = 0.2, likely_replica = 0.05). The base is the item's
+   midpoint ONLY when it is likely_genuine AND confidence ≥ 0.6; otherwise the base is the LOW end
+   of your range (so a wide guess and an uncertain item are valued conservatively). Sum this over
+   counted items only. Example: a watch, range $8k–$12k, confidence 0.5, authenticity uncertain →
+   base = low = $8,000, contribution = 8000 × 0.5 × 0.2 = $800. Set total_value_usd to that adjusted
+   sum. The app recomputes this exact figure, so inflating any number does nothing — keep values honest.
+7. score (1-10) tracks the adjusted total on a rough ladder: ~$500→2, ~$2k→3, ~$10k→5, ~$50k→6,
+   ~$150k→7, ~$500k→8, ~$2M→9, $5M+→10. Higher adjusted total = higher score.
+8. winner: the player with the higher adjusted total. Tie only if within ~15% or both near zero.
+9. Write short, punchy, good-natured commentary (a game — entertaining, never cruel, only about the
+   items, never the players' bodies/appearance). Say why the winner won, name their top item, and if
+   the loser leaned on something that didn't count (a screen balance, a photo, a car they don't own,
+   a stack of cash), call it out briefly.
 
 Frames labeled PLAYER A belong to player A; frames labeled PLAYER B belong to player B.
 If one player's frames are missing or show nothing, score them zero and say so.
@@ -192,11 +225,56 @@ export async function judgeBattle(framesA, framesB) {
     }
     const verdict = JSON.parse(msg.content);
     verdict.judged_frames = { A: a.length, B: b.length };
-    return verdict;
+    return reconcile(verdict);
   } catch (err) {
     console.error("[judge] scoring failed:", err?.message || err);
     return fallbackVerdict("Judging failed due to a technical error.");
   }
+}
+
+// Authenticity discount factor — video cannot prove a high-value item is real,
+// so uncertain/replica items contribute a fraction of their sticker value.
+const AUTH_FACTOR = { likely_genuine: 1.0, uncertain: 0.2, likely_replica: 0.05 };
+
+// A counted item contributes midpoint × confidence × authenticity factor. This
+// is the anti-cheat weighting: a convincing fake or a low-confidence guess adds
+// little, so replica-stuffing and wild ranges can't run up the total.
+function itemContribution(it) {
+  if (!it || it.counted === false) return 0;
+  const low = Number(it.est_value_usd_low) || 0;
+  const high = Number(it.est_value_usd_high) || 0;
+  const conf = Math.max(0, Math.min(1, Number(it.confidence) || 0));
+  const auth = AUTH_FACTOR[it.authenticity] ?? 0.2;
+  // Conservative anchor: only a genuine, confidently-identified item earns its
+  // midpoint; anything uncertain or low-confidence is valued at the LOW end, so
+  // a wide hedged range ($1k–$1M) can't be used to smuggle in a huge midpoint.
+  const base = it.authenticity === "likely_genuine" && conf >= 0.6 ? (low + high) / 2 : low;
+  return Math.max(0, base * conf * auth);
+}
+
+// Log ladder: ~$500→2, ~$2k→3, ~$10k→4.6, ~$50k→6, ~$150k→7, ~$500k→8, ~$2M→9.2, $5M+→10.
+function scoreFromTotal(total) {
+  if (!(total > 0)) return 1;
+  return Math.max(1, Math.min(10, 2 + 2 * Math.log10(total / 500)));
+}
+
+// Recompute total, score, and winner in code so they are consistent with each
+// other and with the item list, and tamper-proof against a hallucinated total
+// or prompt injection on the total/score/winner fields. The model still decides
+// each item's value, authenticity, confidence, and counted flag; we do the math.
+function reconcile(verdict) {
+  const totals = {};
+  for (const p of verdict.players || []) {
+    const t = (p.items || []).reduce((s, it) => s + itemContribution(it), 0);
+    p.total_value_usd = Math.round(t);
+    p.score = Math.round(scoreFromTotal(t) * 10) / 10;
+    totals[p.player] = t;
+  }
+  const a = totals.A || 0, b = totals.B || 0;
+  const hi = Math.max(a, b), lo = Math.min(a, b);
+  if (hi <= 0 || (hi - lo) / hi <= 0.15) verdict.winner = "tie";
+  else verdict.winner = a > b ? "A" : "B";
+  return verdict;
 }
 
 function fallbackVerdict(reason) {
