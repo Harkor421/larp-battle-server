@@ -1,4 +1,5 @@
 import sharp from "sharp";
+import { config } from "./config.js";
 
 // Reject images that decode to more than this many pixels. A small JPEG can
 // decompress to a huge raw buffer ("decompression bomb"); cap the decode so a
@@ -41,8 +42,11 @@ export function hammingDistance(a, b) {
 export async function normalizeFrame(jpegBuffer) {
   return sharp(jpegBuffer, SHARP_OPTS)
     .rotate() // honor EXIF orientation
-    .resize(768, 768, { fit: "inside", withoutEnlargement: true })
-    .jpeg({ quality: 78 })
+    .resize(config.frameMaxEdge, config.frameMaxEdge, {
+      fit: "inside",
+      withoutEnlargement: true,
+    })
+    .jpeg({ quality: config.frameJpegQuality, mozjpeg: true })
     .toBuffer();
 }
 
