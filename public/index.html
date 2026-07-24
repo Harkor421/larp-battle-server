@@ -1,0 +1,90 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Larp Battle — random video flex duels</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <!-- Age gate + consent -->
+  <div id="gate" class="gate">
+    <div class="gate-card">
+      <h1>⚔️ Larp Battle</h1>
+      <p class="tagline">
+        Get matched with a random stranger. You each have 2 minutes to show off
+        your most valuable stuff on camera. An AI judge identifies every item,
+        prices it, and declares the bigger flexer.
+      </p>
+      <ul class="gate-rules">
+        <li>You must be <strong>18 or older</strong>.</li>
+        <li>While a battle is live, a frame of <strong>your camera is captured every second</strong> and analyzed by AI for judging and safety moderation.</li>
+        <li>No nudity, harassment, or illegal content. Violations end the battle and ban you.</li>
+        <li>Valuations are AI guesses for entertainment — not real appraisals.</li>
+      </ul>
+      <label class="gate-check">
+        <input type="checkbox" id="agreeCheck" />
+        I am 18+ and I agree to the <a href="/terms.html" target="_blank">Terms &amp; Conditions</a>
+        and <a href="/privacy.html" target="_blank">Privacy Policy</a>.
+      </label>
+      <button id="enterBtn" disabled>Enter the arena</button>
+    </div>
+  </div>
+
+  <!-- Main app -->
+  <main id="app" class="app hidden">
+    <header>
+      <div class="brand">⚔️ Larp Battle</div>
+      <div id="status" class="status">Ready</div>
+      <div id="timer" class="timer hidden">2:00</div>
+    </header>
+
+    <section class="stage">
+      <div class="video-wrap">
+        <video id="localVideo" autoplay playsinline muted></video>
+        <div class="badge">
+          <span id="localFlag">🏳️</span> You
+          <span id="captureDot" class="capture-dot hidden" title="Capturing frames">●</span>
+        </div>
+      </div>
+      <div class="vs">VS</div>
+      <div class="video-wrap">
+        <video id="remoteVideo" autoplay playsinline></video>
+        <div class="badge"><span id="remoteFlag">🏳️</span> <span id="remoteLabel">Stranger</span></div>
+      </div>
+    </section>
+
+    <section class="controls">
+      <button id="findBtn" class="primary">🎲 Find a battle</button>
+      <button id="nextBtn" class="hidden">⏭️ Next opponent</button>
+      <button id="reportBtn" class="danger hidden">🚩 Report</button>
+    </section>
+
+    <!-- Verdict -->
+    <section id="verdict" class="verdict hidden">
+      <h2 id="verdictTitle">Verdict</h2>
+      <p id="verdictCommentary"></p>
+      <div class="scoreboard">
+        <div class="score-col">
+          <h3 id="scoreTitleYou">You — $0</h3>
+          <table><tbody id="itemsYou"></tbody></table>
+        </div>
+        <div class="score-col">
+          <h3 id="scoreTitleThem">Them — $0</h3>
+          <table><tbody id="itemsThem"></tbody></table>
+        </div>
+      </div>
+      <p class="fine-print">
+        AI-estimated used-market values. For entertainment only — not an appraisal.
+      </p>
+    </section>
+
+    <footer>
+      <a href="/terms.html">Terms</a> · <a href="/privacy.html">Privacy</a>
+    </footer>
+  </main>
+
+  <script src="config.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>

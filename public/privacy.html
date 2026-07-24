@@ -1,0 +1,121 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Privacy Policy — Larp Battle</title>
+  <link rel="stylesheet" href="style.css" />
+  <style>
+    .legal { max-width: 760px; margin: 0 auto; padding: 32px 16px 64px; line-height: 1.65; }
+    .legal h1 { margin-bottom: 4px; }
+    .legal h2 { margin: 28px 0 8px; font-size: 1.15rem; }
+    .legal p, .legal li, .legal td, .legal th { color: var(--text); }
+    .legal ul { margin: 8px 0 8px 22px; }
+    .legal .updated, .legal .template-note { color: var(--muted); font-size: 0.9rem; }
+    .legal .template-note { border: 1px solid #2a3040; border-radius: 10px; padding: 12px; margin: 16px 0; }
+    .legal a { color: var(--accent); }
+    .legal table { width: 100%; border-collapse: collapse; margin: 12px 0; }
+    .legal th, .legal td { border: 1px solid #2a3040; padding: 8px; text-align: left; font-size: 0.9rem; }
+  </style>
+</head>
+<body>
+  <div class="legal">
+    <h1>Privacy Policy</h1>
+    <p class="updated">Last updated: [DATE]</p>
+
+    <p class="template-note">
+      ⚠️ Template — replace bracketed placeholders and have a privacy lawyer review,
+      especially for GDPR (EU/UK) and US state privacy laws. If you process EU users'
+      data you likely need a lawful basis analysis, a DPA with processors, and possibly
+      a representative.
+    </p>
+
+    <h2>1. Controller</h2>
+    <p>[COMPANY NAME], [ADDRESS] — contact [CONTACT EMAIL].</p>
+
+    <h2>2. What we collect and why</h2>
+    <table>
+      <tr><th>Data</th><th>Purpose</th><th>Retention</th></tr>
+      <tr>
+        <td>IP address</td>
+        <td>Connecting you, country display, rate limiting, ban enforcement, abuse prevention</td>
+        <td>For the session; banned IPs kept until the ban is lifted</td>
+      </tr>
+      <tr>
+        <td>Approximate country (derived from IP)</td>
+        <td>Shown to your battle opponent; matchmaking statistics</td>
+        <td>For the session</td>
+      </tr>
+      <tr>
+        <td>Camera frames (≈1 per second during a live battle)</td>
+        <td>AI judging of shown items; automated content moderation</td>
+        <td>In memory only; deleted within minutes of the battle ending — <strong>except</strong> frames from reported or moderation-flagged battles, which are preserved as evidence (up to [1 year] where required, e.g. for NCMEC reports under 18 U.S.C. §2258A)</td>
+      </tr>
+      <tr>
+        <td>Battle metadata (battle ID, timestamps, verdicts, report reasons)</td>
+        <td>Operating the Service, moderation, statistics</td>
+        <td>[90 days]</td>
+      </tr>
+      <tr>
+        <td>Terms-acceptance timestamp (stored in your browser)</td>
+        <td>Remembering that you accepted the age gate and Terms</td>
+        <td>Until you clear your browser storage</td>
+      </tr>
+    </table>
+
+    <h2>3. Live video is peer-to-peer</h2>
+    <p>
+      Your live video/audio stream travels directly to your opponent's device (or
+      through a relay server we operate, which forwards encrypted packets without
+      storing them). We do not record the live stream. Only the sampled frames
+      described above reach our servers. Because connections are peer-to-peer, your
+      IP address may be technically observable by your opponent's device.
+    </p>
+
+    <h2>4. Processors and transfers</h2>
+    <ul>
+      <li><strong>OpenAI</strong> (USA) — receives battle frames for item identification/valuation and content moderation. Per OpenAI's API terms, API data is not used to train their models.</li>
+      <li><strong>[HOSTING PROVIDER, e.g. Hetzner Online GmbH (Germany)]</strong> — servers and relay infrastructure.</li>
+      <li><strong>[Cloudflare]</strong> — network proxy, security, and IP-to-country lookup, if enabled.</li>
+      <li>IP-to-country lookup may use the self-hosted GeoLite2 database (MaxMind). This page includes GeoLite2 data created by MaxMind, available from <a href="https://www.maxmind.com">maxmind.com</a>.</li>
+    </ul>
+    <p>International transfers are safeguarded by [SCCs / DPF — complete with counsel].</p>
+
+    <h2>5. Legal bases (EU/UK users)</h2>
+    <ul>
+      <li>Contract performance: matchmaking, connecting calls, judging battles you start.</li>
+      <li>Legitimate interests: abuse prevention, moderation, security, ban enforcement.</li>
+      <li>Legal obligation: evidence preservation and mandatory reporting (e.g. CSAM to NCMEC).</li>
+      <li>Consent: camera/microphone access and frame capture (you may withdraw by ending the battle or leaving).</li>
+    </ul>
+
+    <h2>6. Your rights</h2>
+    <p>
+      Depending on where you live you may have rights to access, correct, delete, or
+      port your data, and to object to or restrict processing. Contact [CONTACT EMAIL].
+      You may also complain to your supervisory authority. Note that most battle data
+      is deleted automatically within minutes; preserved abuse evidence may be exempt
+      from deletion requests where retention is legally required.
+    </p>
+
+    <h2>7. Children</h2>
+    <p>
+      The Service is strictly 18+. We do not knowingly process children's data. If we
+      become aware of a minor using the Service we terminate the session, ban the
+      user, and preserve and report evidence where legally required.
+    </p>
+
+    <h2>8. Security</h2>
+    <p>
+      All traffic is encrypted in transit (HTTPS/WSS; WebRTC media is encrypted with
+      DTLS-SRTP). Frames are held in server memory, not written to disk, except for
+      preserved abuse evidence, which is access-restricted.
+    </p>
+
+    <h2>9. Changes</h2>
+    <p>Material changes will be announced on the Service.</p>
+
+    <p><a href="/">← Back to Larp Battle</a></p>
+  </div>
+</body>
+</html>
