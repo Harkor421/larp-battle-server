@@ -3,74 +3,68 @@
   "use strict";
 
   // ---------- Backend origin (empty = same origin) ----------
-  const BACKEND =
-    (window.LARP_CONFIG && window.LARP_CONFIG.backendOrigin) || "";
+  const BACKEND = (window.LARP_CONFIG && window.LARP_CONFIG.backendOrigin) || "";
   function wsUrl() {
     if (BACKEND) return BACKEND.replace(/^http/i, "ws") + "/ws";
     const proto = location.protocol === "https:" ? "wss" : "ws";
     return `${proto}://${location.host}/ws`;
   }
-  function apiUrl(path) {
-    return BACKEND ? BACKEND + path : path;
-  }
+  function apiUrl(path) { return BACKEND ? BACKEND + path : path; }
 
   // ---------- DOM ----------
   const $ = (id) => document.getElementById(id);
+  const app = $("app");
   const gate = $("gate");
   const agreeCheck = $("agreeCheck");
   const enterBtn = $("enterBtn");
-  const appEl = $("app");
   const statusEl = $("status");
-  const timerEl = $("timer");
+  const timerText = $("timerText");
   const localVideo = $("localVideo");
   const remoteVideo = $("remoteVideo");
-  const localFlag = $("localFlag");
-  const remoteFlag = $("remoteFlag");
+  const localCountry = $("localCountry");
+  const remoteCountry = $("remoteCountry");
   const remoteLabel = $("remoteLabel");
-  const captureDot = $("captureDot");
   const findBtn = $("findBtn");
+  const cancelBtn = $("cancelBtn");
   const nextBtn = $("nextBtn");
   const reportBtn = $("reportBtn");
-  const verdictEl = $("verdict");
-  const verdictTitle = $("verdictTitle");
-  const verdictCommentary = $("verdictCommentary");
-  const scoreTitleYou = $("scoreTitleYou");
-  const scoreTitleThem = $("scoreTitleThem");
-  const itemsYou = $("itemsYou");
-  const itemsThem = $("itemsThem");
+  const againBtn = $("againBtn");
 
   // ---------- State ----------
-  let ws = null;
-  let pc = null;
-  let localStream = null;
-  let battle = null; // { id, role, token, isCaller, iceServers, frameIntervalMs }
-  let captureTimer = null;
-  let countdownTimer = null;
-  let pendingCandidates = [];
+  let ws = null, pc = null, localStream = null, battle = null;
+  let captureTimer = null, countdownTimer = null, pendingCandidates = [];
   const captureCanvas = document.createElement("canvas");
 
-  function setStatus(text) {
-    statusEl.textContent = text;
+  const regionFmt = (() => {
+    try { return new Intl.DisplayNames(["en"], { type: "region" }); } catch { return null; }
+  })();
+  function regionName(cc) {
+    if (!cc || cc.length !== 2 || /[^A-Za-z]/.test(cc)) return "Unknown";
+    try { return regionFmt ? regionFmt.of(cc.toUpperCase()) || cc.toUpperCase() : cc.toUpperCase(); }
+    catch { return cc.toUpperCase(); }
   }
 
-  function flagEmoji(cc) {
-    if (!cc || cc.length !== 2 || /[^A-Za-z]/.test(cc)) return "🏳️";
-    const A = 0x1f1e6;
-    const up = cc.toUpperCase();
-    return (
-      String.fromCodePoint(A + up.charCodeAt(0) - 65) +
-      String.fromCodePoint(A + up.charCodeAt(1) - 65)
-    );
+  function setStatus(t) { statusEl.textContent = t || ""; }
+
+  const BTN = { find: findBtn, cancel: cancelBtn, next: nextBtn, report: reportBtn };
+  const SCREEN_BUTTONS = {
+    lobby: ["find"], searching: ["cancel"],
+    connecting: ["next", "report"], battle: ["next", "report"],
+    judging: [], verdict: [],
+  };
+  function setScreen(name) {
+    app.dataset.screen = name;
+    const show = SCREEN_BUTTONS[name] || [];
+    for (const k of Object.keys(BTN)) BTN[k].classList.toggle("hidden", !show.includes(k));
   }
 
   // ---------- Age gate ----------
-  agreeCheck.addEventListener("change", () => {
-    enterBtn.disabled = !agreeCheck.checked;
-  });
+  agreeCheck.addEventListener("change", () => { enterBtn.disabled = !agreeCheck.checked; });
   enterBtn.addEventListener("click", async () => {
     localStorage.setItem("larp_tos_accepted", new Date().toISOString());
     gate.classList.add("hidden");
-    appEl.classList.remove("hidden");
+    app.classList.remove("hidden");
+    setScreen("lobby");
     await initMedia();
     connectWs();
   });
@@ -83,9 +77,9 @@
         audio: true,
       });
       localVideo.srcObject = localStream;
-      setStatus("Camera ready. Find a battle!");
-    } catch (err) {
-      setStatus("Camera/mic access is required to battle. Reload and allow access.");
+      setStatus("Camera ready. Start a battle when you are.");
+    } catch {
+      setStatus("Camera and microphone access is required. Reload and allow access.");
       findBtn.disabled = true;
     }
   }
@@ -94,131 +88,74 @@
   function connectWs() {
     ws = new WebSocket(wsUrl());
     ws.addEventListener("message", (ev) => {
-      let msg;
-      try {
-        msg = JSON.parse(ev.data);
-      } catch {
-        return;
-      }
+      let msg; try { msg = JSON.parse(ev.data); } catch { return; }
       handleMessage(msg);
     });
     ws.addEventListener("close", () => {
-      setStatus("Disconnected from server. Reconnecting…");
+      setStatus("Reconnecting…");
       teardownBattle();
       setTimeout(connectWs, 2000);
     });
   }
-
-  function wsSend(msg) {
-    if (ws && ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify(msg));
-  }
+  function wsSend(msg) { if (ws && ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify(msg)); }
 
   async function handleMessage(msg) {
     switch (msg.type) {
-      case "hello":
-        localFlag.textContent = flagEmoji(msg.country);
-        break;
+      case "hello": localCountry.textContent = regionName(msg.country); break;
       case "banned":
-        setStatus(`You are banned: ${msg.reason}`);
-        findBtn.disabled = true;
-        break;
-      case "queued":
-        setStatus("Searching for an opponent…");
-        break;
-      case "matched":
-        await onMatched(msg);
-        break;
-      case "signal":
-        await onSignal(msg.data);
-        break;
-      case "battle_start":
-        onBattleStart(msg);
-        break;
-      case "judging":
-        stopCapture();
-        setStatus("⏳ The AI judge is pricing your items…");
-        break;
-      case "verdict":
-        showVerdict(msg.role, msg.verdict);
-        break;
+        setStatus("Access blocked: " + (msg.reason || "banned"));
+        setScreen("lobby"); findBtn.disabled = true; break;
+      case "queued": setStatus("Searching for an opponent…"); break;
+      case "matched": await onMatched(msg); break;
+      case "signal": await onSignal(msg.data); break;
+      case "battle_start": onBattleStart(msg); break;
+      case "judging": stopCapture(); setScreen("judging"); setStatus("Scoring the match…"); break;
+      case "verdict": showVerdict(msg.role, msg.verdict); break;
       case "battle_aborted":
-        setStatus(msg.reason || "Battle ended.");
-        teardownBattle();
-        showIdleButtons();
-        break;
-      case "peer_left":
-        setStatus("Your opponent left.");
-        break;
-      case "report_received":
-        setStatus("Report received. Thank you.");
-        break;
+        setStatus(msg.reason || "Match ended.");
+        teardownBattle(); setScreen("lobby"); findBtn.textContent = "Find a battle"; break;
+      case "peer_left": setStatus("Your opponent left."); break;
+      case "report_received": setStatus("Report received. Thank you."); break;
     }
   }
 
-  // ---------- Matchmaking / WebRTC ----------
+  // ---------- Controls ----------
   findBtn.addEventListener("click", () => {
-    hideVerdict();
-    findBtn.classList.add("hidden");
-    wsSend({ type: "join_queue" });
-    setStatus("Searching for an opponent…");
+    hideVerdict(); setScreen("searching"); wsSend({ type: "join_queue" });
   });
-
+  cancelBtn.addEventListener("click", () => {
+    wsSend({ type: "leave_queue" }); setScreen("lobby"); setStatus("Search cancelled.");
+  });
+  againBtn.addEventListener("click", () => { hideVerdict(); setScreen("searching"); wsSend({ type: "join_queue" }); });
   nextBtn.addEventListener("click", () => {
-    wsSend({ type: "leave" });
-    teardownBattle();
-    hideVerdict();
-    wsSend({ type: "join_queue" });
-    setStatus("Searching for an opponent…");
-    nextBtn.classList.add("hidden");
-    reportBtn.classList.add("hidden");
+    wsSend({ type: "leave" }); teardownBattle(); hideVerdict();
+    setScreen("searching"); wsSend({ type: "join_queue" });
   });
-
   reportBtn.addEventListener("click", () => {
-    const reason = prompt(
-      "What happened? (nudity, harassment, scam, underage, other)"
-    );
-    if (reason !== null) {
-      wsSend({ type: "report", reason: reason || "unspecified" });
-    }
+    const reason = prompt("What happened? (nudity, harassment, scam, underage, other)");
+    if (reason !== null) wsSend({ type: "report", reason: reason || "unspecified" });
   });
 
+  // ---------- WebRTC ----------
   async function onMatched(msg) {
     battle = {
-      id: msg.battleId,
-      role: msg.role,
-      token: msg.token,
-      isCaller: msg.isCaller,
-      frameIntervalMs: msg.frameIntervalMs || 1000,
-      durationMs: msg.durationMs,
+      id: msg.battleId, role: msg.role, token: msg.token,
+      isCaller: msg.isCaller, frameIntervalMs: msg.frameIntervalMs || 1000,
     };
     pendingCandidates = [];
-    remoteFlag.textContent = flagEmoji(msg.peerCountry);
-    remoteLabel.textContent = `Stranger (${msg.peerCountry})`;
-    setStatus(`Matched with someone in ${msg.peerCountry}. Connecting…`);
-    reportBtn.classList.remove("hidden");
-    nextBtn.classList.remove("hidden");
+    remoteCountry.textContent = regionName(msg.peerCountry);
+    remoteLabel.textContent = "Opponent";
+    setScreen("connecting");
+    setStatus("Opponent found in " + regionName(msg.peerCountry) + ". Connecting…");
 
     pc = new RTCPeerConnection({ iceServers: msg.iceServers || [] });
-    for (const track of localStream.getTracks()) {
-      pc.addTrack(track, localStream);
-    }
-    pc.ontrack = (ev) => {
-      if (remoteVideo.srcObject !== ev.streams[0]) {
-        remoteVideo.srcObject = ev.streams[0];
-      }
-    };
-    pc.onicecandidate = (ev) => {
-      if (ev.candidate) wsSend({ type: "signal", data: { candidate: ev.candidate } });
-    };
+    for (const track of localStream.getTracks()) pc.addTrack(track, localStream);
+    pc.ontrack = (ev) => { if (remoteVideo.srcObject !== ev.streams[0]) remoteVideo.srcObject = ev.streams[0]; };
+    pc.onicecandidate = (ev) => { if (ev.candidate) wsSend({ type: "signal", data: { candidate: ev.candidate } }); };
     pc.onconnectionstatechange = () => {
-      if (pc.connectionState === "connected") {
-        setStatus("Connected! Waiting for the battle to start…");
-        wsSend({ type: "ready" });
-      } else if (["failed", "disconnected"].includes(pc.connectionState)) {
-        setStatus("Connection lost.");
-      }
+      if (pc.connectionState === "connected") { setStatus("Connected. Get ready…"); wsSend({ type: "ready" }); }
+      else if (["failed", "disconnected"].includes(pc.connectionState)) setStatus("Connection lost.");
     };
-
     if (battle.isCaller) {
       const offer = await pc.createOffer();
       await pc.setLocalDescription(offer);
@@ -231,9 +168,7 @@
     try {
       if (data.sdp) {
         await pc.setRemoteDescription(new RTCSessionDescription(data.sdp));
-        for (const c of pendingCandidates) {
-          await pc.addIceCandidate(c).catch(() => {});
-        }
+        for (const c of pendingCandidates) await pc.addIceCandidate(c).catch(() => {});
         pendingCandidates = [];
         if (data.sdp.type === "offer") {
           const answer = await pc.createAnswer();
@@ -241,91 +176,58 @@
           wsSend({ type: "signal", data: { sdp: pc.localDescription } });
         }
       } else if (data.candidate) {
-        if (pc.remoteDescription) {
-          await pc.addIceCandidate(data.candidate).catch(() => {});
-        } else {
-          pendingCandidates.push(data.candidate);
-        }
+        if (pc.remoteDescription) await pc.addIceCandidate(data.candidate).catch(() => {});
+        else pendingCandidates.push(data.candidate);
       }
-    } catch (err) {
-      console.error("signal error", err);
-    }
+    } catch (err) { console.error("signal error", err); }
   }
 
   // ---------- Battle ----------
   function onBattleStart(msg) {
-    setStatus("🔥 BATTLE LIVE — show your most expensive stuff!");
-    timerEl.classList.remove("hidden");
-    captureDot.classList.remove("hidden");
+    setScreen("battle");
+    setStatus("Live — show your most valuable items.");
     startCountdown(msg.endsAt);
     startCapture();
   }
-
   function startCountdown(endsAt) {
     clearInterval(countdownTimer);
     const tick = () => {
       const left = Math.max(0, endsAt - Date.now());
-      const m = Math.floor(left / 60000);
-      const s = Math.floor((left % 60000) / 1000);
-      timerEl.textContent = `${m}:${String(s).padStart(2, "0")}`;
+      const m = Math.floor(left / 60000), s = Math.floor((left % 60000) / 1000);
+      timerText.textContent = `${m}:${String(s).padStart(2, "0")}`;
       if (left <= 0) clearInterval(countdownTimer);
     };
-    tick();
-    countdownTimer = setInterval(tick, 250);
+    tick(); countdownTimer = setInterval(tick, 250);
   }
-
-  // Capture a frame of the LOCAL camera every frameIntervalMs and upload it.
   function startCapture() {
     stopCapture();
     captureTimer = setInterval(async () => {
       if (!battle || !localStream) return;
       const track = localStream.getVideoTracks()[0];
       if (!track || track.readyState !== "live") return;
-      const vw = localVideo.videoWidth;
-      const vh = localVideo.videoHeight;
+      const vw = localVideo.videoWidth, vh = localVideo.videoHeight;
       if (!vw || !vh) return;
       const scale = Math.min(1, 768 / Math.max(vw, vh));
       captureCanvas.width = Math.round(vw * scale);
       captureCanvas.height = Math.round(vh * scale);
-      const ctx = captureCanvas.getContext("2d");
-      ctx.drawImage(localVideo, 0, 0, captureCanvas.width, captureCanvas.height);
-      const blob = await new Promise((resolve) =>
-        captureCanvas.toBlob(resolve, "image/jpeg", 0.75)
-      );
+      captureCanvas.getContext("2d").drawImage(localVideo, 0, 0, captureCanvas.width, captureCanvas.height);
+      const blob = await new Promise((r) => captureCanvas.toBlob(r, "image/jpeg", 0.75));
       if (!blob || !battle) return;
       fetch(apiUrl(`/api/battle/${battle.id}/frame`), {
         method: "POST",
-        headers: {
-          "Content-Type": "image/jpeg",
-          "X-Battle-Token": battle.token,
-        },
+        headers: { "Content-Type": "image/jpeg", "X-Battle-Token": battle.token },
         body: blob,
       }).catch(() => {});
     }, battle.frameIntervalMs);
   }
-
-  function stopCapture() {
-    clearInterval(captureTimer);
-    captureTimer = null;
-    captureDot.classList.add("hidden");
-  }
+  function stopCapture() { clearInterval(captureTimer); captureTimer = null; }
 
   function teardownBattle() {
     stopCapture();
     clearInterval(countdownTimer);
-    timerEl.classList.add("hidden");
-    if (pc) {
-      pc.close();
-      pc = null;
-    }
+    if (pc) { pc.close(); pc = null; }
     remoteVideo.srcObject = null;
     battle = null;
-  }
-
-  function showIdleButtons() {
-    findBtn.classList.remove("hidden");
-    nextBtn.classList.add("hidden");
-    reportBtn.classList.add("hidden");
   }
 
   // ---------- Verdict ----------
@@ -333,70 +235,115 @@
     if (typeof n !== "number" || !isFinite(n)) return "$0";
     return "$" + Math.round(n).toLocaleString("en-US");
   }
+  function clampScore(n) {
+    n = Number(n);
+    if (!isFinite(n)) return 0;
+    return Math.max(0, Math.min(10, n));
+  }
+  function countUp(el, target, suffixDecimals) {
+    const start = performance.now(), dur = 900;
+    function frame(now) {
+      const t = Math.min(1, (now - start) / dur);
+      const eased = 1 - Math.pow(1 - t, 3);
+      el.textContent = (target * eased).toFixed(suffixDecimals);
+      if (t < 1) requestAnimationFrame(frame);
+      else el.textContent = target.toFixed(suffixDecimals);
+    }
+    requestAnimationFrame(frame);
+  }
 
-  function renderItems(tbody, items) {
-    tbody.innerHTML = "";
-    if (!items || items.length === 0) {
-      const tr = document.createElement("tr");
-      const td = document.createElement("td");
-      td.textContent = "Nothing of value shown 💀";
-      tr.appendChild(td);
-      tbody.appendChild(tr);
+  function renderItems(ul, items) {
+    ul.innerHTML = "";
+    const list = Array.isArray(items) ? items.slice() : [];
+    if (list.length === 0) {
+      const li = document.createElement("li");
+      li.className = "items-empty";
+      li.textContent = "Nothing of value shown.";
+      ul.appendChild(li);
       return;
     }
-    for (const item of items) {
-      const tr = document.createElement("tr");
-      const name = document.createElement("td");
-      const strong = document.createElement("strong");
-      strong.textContent = item.name;
-      name.appendChild(strong);
-      const meta = document.createElement("div");
-      meta.className = "item-meta";
-      const auth =
-        item.authenticity === "likely_replica"
-          ? " · ⚠️ likely replica"
-          : item.authenticity === "uncertain"
-          ? " · authenticity uncertain"
-          : "";
-      meta.textContent = `${item.brand_or_model}${auth}`;
-      name.appendChild(meta);
-      const val = document.createElement("td");
-      val.className = "val";
+    // Decisive first, then by value.
+    list.sort((a, b) => {
+      const da = a.decisive ? 1 : 0, db = b.decisive ? 1 : 0;
+      if (da !== db) return db - da;
+      return (b.est_value_usd_high || 0) - (a.est_value_usd_high || 0);
+    });
+    list.forEach((item, i) => {
+      const li = document.createElement("li");
+      li.className = "item" + (item.decisive ? " decisive" : "");
+      li.style.animationDelay = (0.12 + i * 0.06) + "s";
+
+      const main = document.createElement("div");
+      main.className = "item-main";
+      const name = document.createElement("div");
+      name.className = "item-name";
+      name.textContent = item.name || "Item";
+      if (item.decisive) {
+        const tag = document.createElement("span");
+        tag.className = "tag"; tag.textContent = "DECISIVE";
+        name.appendChild(tag);
+      }
+      const sub = document.createElement("div");
+      sub.className = "item-sub";
+      sub.textContent = item.brand_or_model || "unidentified";
+      if (item.authenticity === "likely_replica") {
+        const r = document.createElement("span");
+        r.className = "repl"; r.textContent = " · likely replica";
+        sub.appendChild(r);
+      } else if (item.authenticity === "uncertain") {
+        sub.append(" · authenticity uncertain");
+      }
+      main.appendChild(name); main.appendChild(sub);
+
+      const val = document.createElement("div");
+      val.className = "item-val";
       val.textContent = `${money(item.est_value_usd_low)}–${money(item.est_value_usd_high)}`;
-      tr.appendChild(name);
-      tr.appendChild(val);
-      tbody.appendChild(tr);
-    }
+
+      li.appendChild(main); li.appendChild(val);
+      ul.appendChild(li);
+    });
   }
 
   function showVerdict(myRole, verdict) {
-    stopCapture();
-    teardownBattle();
+    stopCapture(); teardownBattle();
     verdict = verdict || {};
     const players = Array.isArray(verdict.players) ? verdict.players : [];
-    const me = players.find((p) => p && p.player === myRole);
-    const them = players.find((p) => p && p.player !== myRole);
+    const me = players.find((p) => p && p.player === myRole) || {};
+    const them = players.find((p) => p && p.player !== myRole) || {};
     const iWon = verdict.winner === myRole;
-    const tie = verdict.winner === "tie";
+    const tie = verdict.winner === "tie" || !verdict.winner;
 
-    verdictTitle.textContent = tie
-      ? "🤝 It's a tie"
-      : iWon
-      ? "🏆 YOU WIN — certified flexer"
-      : "💀 You lost — bigger larper wins";
-    verdictTitle.className = tie ? "" : iWon ? "won" : "lost";
-    verdictCommentary.textContent = verdict.commentary || "";
-    scoreTitleYou.textContent = `You — ${money(me?.total_value_usd)}`;
-    scoreTitleThem.textContent = `Them — ${money(them?.total_value_usd)}`;
-    renderItems(itemsYou, me?.items);
-    renderItems(itemsThem, them?.items);
-    verdictEl.classList.remove("hidden");
-    setStatus("Battle over.");
-    showIdleButtons();
-    findBtn.textContent = "🎲 Battle again";
+    const result = $("verdictResult");
+    result.textContent = tie ? "Draw" : iWon ? "You win" : "You lose";
+    result.className = "verdict-result " + (tie ? "tie" : iWon ? "win" : "lose");
+    $("verdictReason").textContent = verdict.commentary || "";
+
+    const sYou = clampScore(me.score), sThem = clampScore(them.score);
+    const sideYou = $("sideYou"), sideThem = $("sideThem");
+    sideYou.classList.toggle("win", iWon && !tie);
+    sideYou.classList.toggle("lose", !iWon && !tie);
+    sideThem.classList.toggle("win", !iWon && !tie);
+    sideThem.classList.toggle("lose", iWon && !tie);
+
+    $("totalYou").textContent = money(me.total_value_usd);
+    $("totalThem").textContent = money(them.total_value_usd);
+    renderItems($("itemsYou"), me.items);
+    renderItems($("itemsThem"), them.items);
+
+    setScreen("verdict");
+    setStatus("");
+    // Animate after the screen paints.
+    requestAnimationFrame(() => {
+      countUp($("scoreYou"), sYou, 1);
+      countUp($("scoreThem"), sThem, 1);
+      $("barYou").style.width = sYou * 10 + "%";
+      $("barThem").style.width = sThem * 10 + "%";
+    });
   }
 
   function hideVerdict() {
-    verdictEl.classList.add("hidden");
+    // Reset bars so the next reveal animates from zero.
+    $("barYou").style.width = "0%";
+    $("barThem").style.width = "0%";
   }
 })();
