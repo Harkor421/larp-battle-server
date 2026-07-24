@@ -219,7 +219,10 @@ function tryMatch() {
     const a = queue.shift();
     // Don't match a player against another connection from their own IP — that
     // is both a self-battle exploit and pointless. Find the first different IP.
-    const j = queue.findIndex((e) => e.ip !== a.ip);
+    // (ALLOW_SAME_IP_MATCH bypasses this for solo testing / low-traffic launch.)
+    const j = config.allowSameIpMatch
+      ? 0
+      : queue.findIndex((e) => e.ip !== a.ip);
     if (j === -1) {
       queue.unshift(a); // no eligible partner yet; wait for someone else
       break;
