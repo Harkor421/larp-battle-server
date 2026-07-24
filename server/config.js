@@ -26,6 +26,19 @@ export const config = {
   frameIntervalMs: num("FRAME_INTERVAL_MS", 1000),
   readyTimeoutMs: num("READY_TIMEOUT_MS", 25_000),
 
+  // Abuse limits
+  // Trusted reverse-proxy hops in front of this server (Railway = 1;
+  // Cloudflare in front of Railway = 2). Used to pick the real client IP from
+  // x-forwarded-for; the leftmost/attacker-supplied entries are ignored.
+  trustProxyHops:
+    process.env.TRUST_PROXY_HOPS === undefined
+      ? 1
+      : Math.max(0, Number(process.env.TRUST_PROXY_HOPS) || 0),
+  maxConnPerIp: num("MAX_CONN_PER_IP", 8),
+
+  // Admin panel (disabled unless ADMIN_TOKEN is set)
+  adminToken: process.env.ADMIN_TOKEN || "",
+
   // Frames
   maxFrameBytes: num("MAX_FRAME_BYTES", 400_000),
   maxStoredFramesPerPlayer: num("MAX_STORED_FRAMES_PER_PLAYER", 180),
