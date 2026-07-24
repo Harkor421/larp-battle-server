@@ -46,6 +46,83 @@
 
   function setStatus(t) { statusEl.textContent = t || ""; }
 
+  const reduceMotion =
+    window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+  // ---------- Rotating search phrases ----------
+  const SEARCH_PHRASES = [
+    "Finding an opponent…",
+    "Scanning the globe…",
+    "Matching you with a challenger…",
+    "Searching the arena…",
+  ];
+  let searchPhraseTimer = null;
+  function startSearchPhrases() {
+    const el = $("searchText");
+    if (!el) return;
+    let i = 0;
+    el.textContent = SEARCH_PHRASES[0];
+    clearInterval(searchPhraseTimer);
+    searchPhraseTimer = setInterval(() => {
+      i = (i + 1) % SEARCH_PHRASES.length;
+      el.style.opacity = "0";
+      setTimeout(() => { el.textContent = SEARCH_PHRASES[i]; el.style.opacity = "1"; }, 200);
+    }, 2200);
+  }
+  function stopSearchPhrases() { clearInterval(searchPhraseTimer); searchPhraseTimer = null; }
+
+  // ---------- Confetti ----------
+  function launchConfetti() {
+    if (reduceMotion) return;
+    const canvas = $("confetti");
+    if (!canvas) return;
+    const ctx = canvas.getContext("2d");
+    const dpr = Math.min(2, window.devicePixelRatio || 1);
+    canvas.width = window.innerWidth * dpr;
+    canvas.height = window.innerHeight * dpr;
+    ctx.scale(dpr, dpr);
+    const W = window.innerWidth, H = window.innerHeight;
+    const colors = ["#d8b45a", "#e8c877", "#ffffff", "#37c88a", "#7aa2ff"];
+    const N = 160;
+    const parts = [];
+    for (let i = 0; i < N; i++) {
+      parts.push({
+        x: W / 2 + (Math.random() - 0.5) * 120,
+        y: H / 3,
+        vx: (Math.random() - 0.5) * 12,
+        vy: Math.random() * -14 - 4,
+        size: Math.random() * 6 + 4,
+        color: colors[(Math.random() * colors.length) | 0],
+        rot: Math.random() * Math.PI,
+        vr: (Math.random() - 0.5) * 0.3,
+        life: 0,
+      });
+    }
+    const start = performance.now();
+    function frame(now) {
+      const elapsed = now - start;
+      ctx.clearRect(0, 0, W, H);
+      let alive = 0;
+      for (const p of parts) {
+        p.vy += 0.35; // gravity
+        p.vx *= 0.99;
+        p.x += p.vx; p.y += p.vy; p.rot += p.vr; p.life++;
+        if (p.y < H + 20) alive++;
+        const fade = Math.max(0, 1 - elapsed / 2600);
+        ctx.save();
+        ctx.translate(p.x, p.y);
+        ctx.rotate(p.rot);
+        ctx.globalAlpha = fade;
+        ctx.fillStyle = p.color;
+        ctx.fillRect(-p.size / 2, -p.size / 2, p.size, p.size * 0.6);
+        ctx.restore();
+      }
+      if (elapsed < 2600 && alive > 0) requestAnimationFrame(frame);
+      else ctx.clearRect(0, 0, W, H);
+    }
+    requestAnimationFrame(frame);
+  }
+
   const BTN = { find: findBtn, cancel: cancelBtn, next: nextBtn, report: reportBtn };
   const SCREEN_BUTTONS = {
     lobby: ["find"], searching: ["cancel"],
@@ -56,6 +133,8 @@
     app.dataset.screen = name;
     const show = SCREEN_BUTTONS[name] || [];
     for (const k of Object.keys(BTN)) BTN[k].classList.toggle("hidden", !show.includes(k));
+    if (name === "searching") startSearchPhrases();
+    else stopSearchPhrases();
   }
 
   // ---------- Age gate ----------
@@ -191,10 +270,12 @@
   }
   function startCountdown(endsAt) {
     clearInterval(countdownTimer);
+    const timerEl = $("timer");
     const tick = () => {
       const left = Math.max(0, endsAt - Date.now());
       const m = Math.floor(left / 60000), s = Math.floor((left % 60000) / 1000);
       timerText.textContent = `${m}:${String(s).padStart(2, "0")}`;
+      timerEl.classList.toggle("low", left > 0 && left <= 10000);
       if (left <= 0) clearInterval(countdownTimer);
     };
     tick(); countdownTimer = setInterval(tick, 250);
@@ -225,6 +306,7 @@
   function teardownBattle() {
     stopCapture();
     clearInterval(countdownTimer);
+    $("timer").classList.remove("low");
     if (pc) { pc.close(); pc = null; }
     remoteVideo.srcObject = null;
     battle = null;
@@ -330,6 +412,8 @@
     renderItems($("itemsYou"), me.items);
     renderItems($("itemsThem"), them.items);
 
+    $("crown").classList.toggle("show", iWon && !tie);
+
     setScreen("verdict");
     setStatus("");
     // Animate after the screen paints.
@@ -339,11 +423,19 @@
       $("barYou").style.width = sYou * 10 + "%";
       $("barThem").style.width = sThem * 10 + "%";
     });
+    if (iWon && !tie) setTimeout(launchConfetti, 350);
   }
 
   function hideVerdict() {
     // Reset bars so the next reveal animates from zero.
     $("barYou").style.width = "0%";
     $("barThem").style.width = "0%";
+  }
+
+  // Hash-gated preview hook (only active with #demo) — lets you drive the UI
+  // without a live opponent, e.g. window.LARP_DEMO.verdict('A', {...}). Harmless
+  // in production; does nothing unless the URL ends in #demo.
+  if (location.hash === "#demo") {
+    window.LARP_DEMO = { verdict: showVerdict, screen: setScreen, confetti: launchConfetti };
   }
 })();

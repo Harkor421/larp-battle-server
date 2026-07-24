@@ -7,6 +7,9 @@
   <link rel="stylesheet" href="style.css" />
 </head>
 <body>
+  <div class="bg-aurora" aria-hidden="true"><span></span><span></span><span></span></div>
+  <canvas id="confetti" class="confetti" aria-hidden="true"></canvas>
+
   <!-- Age gate + consent -->
   <div id="gate" class="gate">
     <div class="gate-card">
@@ -40,47 +43,35 @@
       <div id="timer" class="timer"><span id="timerText">1:00</span></div>
     </header>
 
-    <div class="layout">
-      <!-- Video stage -->
-      <section class="stage">
-        <div class="tile tile-local">
-          <video id="localVideo" autoplay playsinline muted></video>
-          <div class="tile-overlay">
-            <span class="tile-label"><span class="dot-you"></span>You<span id="localCountry" class="loc"></span></span>
-            <span id="recBadge" class="rec-badge">REC</span>
-          </div>
-          <div id="searchScrim" class="scrim">
-            <div class="pulse-ring"></div>
-            <div class="scrim-text">Finding an opponent…</div>
-          </div>
+    <!-- Video stage -->
+    <section class="stage">
+      <div class="tile tile-local">
+        <video id="localVideo" autoplay playsinline muted></video>
+        <div class="tile-overlay">
+          <span class="tile-label"><span class="dot-you"></span>You<span id="localCountry" class="loc"></span></span>
+          <span id="recBadge" class="rec-badge">REC</span>
         </div>
-
-        <div class="tile tile-remote">
-          <video id="remoteVideo" autoplay playsinline></video>
-          <div class="tile-overlay">
-            <span class="tile-label"><span class="dot-them"></span><span id="remoteLabel">Opponent</span><span id="remoteCountry" class="loc"></span></span>
-          </div>
-          <div id="judgeScrim" class="scrim">
-            <div class="spinner"></div>
-            <div class="scrim-text">The judge is scoring the match…</div>
-          </div>
+        <div id="searchScrim" class="scrim">
+          <div class="radar"><span></span></div>
+          <div class="scrim-text" id="searchText">Finding an opponent…</div>
         </div>
-      </section>
+      </div>
 
-      <!-- How to win (lobby only) -->
-      <aside class="howto" id="howto">
-        <h2>How to win</h2>
-        <ol class="steps">
-          <li><span class="step-n">1</span><div><strong>Show your best items.</strong> Watches, jewelry, cars, designer pieces, electronics — the more valuable, the better.</div></li>
-          <li><span class="step-n">2</span><div><strong>Get them on camera.</strong> Hold each item close and steady so the AI can identify the brand and model.</div></li>
-          <li><span class="step-n">3</span><div><strong>Beat the clock.</strong> Each match is 60 seconds. A frame is captured every second and scored.</div></li>
-          <li><span class="step-n">4</span><div><strong>Authenticity counts.</strong> Genuine pieces score higher than replicas. Higher total wins.</div></li>
-        </ol>
-        <p class="howto-foot">Be respectful. No nudity or harassment — it ends the match instantly.</p>
-      </aside>
-    </div>
+      <div class="tile tile-remote">
+        <video id="remoteVideo" autoplay playsinline></video>
+        <div class="tile-overlay">
+          <span class="tile-label"><span class="dot-them"></span><span id="remoteLabel">Opponent</span><span id="remoteCountry" class="loc"></span></span>
+        </div>
+        <div id="judgeScrim" class="scrim">
+          <div class="spinner"></div>
+          <div class="scrim-text">The judge is scoring the match…</div>
+        </div>
+      </div>
 
-    <!-- Controls -->
+      <div class="vs-badge" id="vsBadge" aria-hidden="true">VS</div>
+    </section>
+
+    <!-- Controls (sit directly under the camera) -->
     <div class="controls">
       <button id="findBtn" class="btn btn-primary btn-lg">Find a battle</button>
       <button id="cancelBtn" class="btn btn-ghost hidden">Cancel</button>
@@ -88,9 +79,30 @@
       <button id="reportBtn" class="btn btn-danger-ghost hidden">Report</button>
     </div>
 
+    <!-- How to win (lobby only) -->
+    <aside class="howto" id="howto">
+      <h2>How to win</h2>
+      <ol class="steps">
+        <li><span class="step-n">1</span><div><strong>Show your best items.</strong> Watches, jewelry, cars, designer pieces, electronics — the more valuable, the better.</div></li>
+        <li><span class="step-n">2</span><div><strong>Get them on camera.</strong> Hold each item close and steady so the AI can identify the brand and model.</div></li>
+        <li><span class="step-n">3</span><div><strong>Beat the clock.</strong> Each match is 60 seconds. A frame is captured every second and scored.</div></li>
+        <li><span class="step-n">4</span><div><strong>Authenticity counts.</strong> Genuine pieces score higher than replicas. Higher total wins.</div></li>
+      </ol>
+      <p class="howto-foot">Be respectful. No nudity or harassment — it ends the match instantly.</p>
+    </aside>
+
     <!-- Verdict -->
-    <section id="verdict" class="verdict hidden">
+    <section id="verdict" class="verdict">
       <div id="verdictBanner" class="verdict-banner">
+        <div class="crown" id="crown" aria-hidden="true">
+          <svg viewBox="0 0 64 44" width="52" height="36">
+            <path d="M4 40 L10 14 L22 28 L32 6 L42 28 L54 14 L60 40 Z"
+              fill="currentColor" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/>
+            <circle cx="10" cy="12" r="3.4" fill="currentColor"/>
+            <circle cx="32" cy="5" r="3.8" fill="currentColor"/>
+            <circle cx="54" cy="12" r="3.4" fill="currentColor"/>
+          </svg>
+        </div>
         <div id="verdictResult" class="verdict-result">Result</div>
         <div id="verdictReason" class="verdict-reason"></div>
       </div>
