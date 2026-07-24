@@ -17,9 +17,14 @@ const VERDICT_SCHEMA = {
       items: {
         type: "object",
         additionalProperties: false,
-        required: ["player", "items", "total_value_usd", "notes"],
+        required: ["player", "score", "items", "total_value_usd", "notes"],
         properties: {
           player: { type: "string", enum: ["A", "B"] },
+          score: {
+            type: "number",
+            description:
+              "Overall flex score from 1 to 10 (one decimal ok). 10 = a jaw-dropping display of genuine wealth; 5 = a few solid items; 1 = nothing of value shown. The winner should have the higher score.",
+          },
           items: {
             type: "array",
             description:
@@ -34,11 +39,17 @@ const VERDICT_SCHEMA = {
                 "est_value_usd_high",
                 "confidence",
                 "authenticity",
+                "decisive",
               ],
               properties: {
                 name: {
                   type: "string",
                   description: "Short item name, e.g. 'wristwatch', 'sports car'",
+                },
+                decisive: {
+                  type: "boolean",
+                  description:
+                    "True for the small number of items that most determined this player's score (the headline pieces).",
                 },
                 brand_or_model: {
                   type: "string",
@@ -90,10 +101,15 @@ Your job:
    implausible combinations, or tell-tale flaws should lower confidence and raise replica suspicion.
    Discount likely replicas to replica prices.
 4. Compute each player's total (midpoints, discounted by confidence and authenticity).
-5. Declare the winner: the player whose shown items are worth more. Declare a tie only when the
-   totals are within 15% of each other or neither player showed anything of value.
-6. Write short, punchy, good-natured commentary (this is a game — be entertaining, never cruel,
-   no comments about the players' bodies or appearance, only their items).
+5. Give each player an overall flex score from 1 to 10 (one decimal is fine): 10 is a jaw-dropping
+   display of genuine wealth, 5 is a few solid items, 1 is nothing of value. The winner must have
+   the higher score.
+6. Mark the small number of "decisive" items (the headline pieces) that most drove each score.
+7. Declare the winner: the player whose shown items are worth more. Declare a tie only when the
+   scores are within about 0.5 of each other or neither player showed anything of value.
+8. Write short, punchy, good-natured commentary (this is a game — be entertaining, never cruel,
+   no comments about the players' bodies or appearance, only their items). State plainly why the
+   winner won and which items decided it.
 
 Frames labeled PLAYER A belong to player A; frames labeled PLAYER B belong to player B.
 If one player's frames are missing or show nothing, score them zero and say so.
@@ -186,8 +202,8 @@ export async function judgeBattle(framesA, framesB) {
 function fallbackVerdict(reason) {
   return {
     players: [
-      { player: "A", items: [], total_value_usd: 0, notes: reason },
-      { player: "B", items: [], total_value_usd: 0, notes: reason },
+      { player: "A", score: 0, items: [], total_value_usd: 0, notes: reason },
+      { player: "B", score: 0, items: [], total_value_usd: 0, notes: reason },
     ],
     winner: "tie",
     commentary: reason,

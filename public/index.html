@@ -10,77 +10,126 @@
   <!-- Age gate + consent -->
   <div id="gate" class="gate">
     <div class="gate-card">
-      <h1>⚔️ Larp Battle</h1>
+      <div class="wordmark">LARP<span>BATTLE</span></div>
       <p class="tagline">
-        Get matched with a random stranger. You each have 1 minute to show off
-        your most valuable stuff on camera. An AI judge identifies every item,
-        prices it, and declares the bigger flexer.
+        Get matched with a random stranger. You each have one minute to show off
+        your most valuable things on camera. An AI judge identifies every item,
+        prices it, and scores who flexed harder.
       </p>
       <ul class="gate-rules">
         <li>You must be <strong>18 or older</strong>.</li>
-        <li>While a battle is live, a frame of <strong>your camera is captured every second</strong> and analyzed by AI for judging and safety moderation.</li>
-        <li>No nudity, harassment, or illegal content. Violations end the battle and ban you.</li>
-        <li>Valuations are AI guesses for entertainment — not real appraisals.</li>
+        <li>While a match is live, a frame of your camera is captured every second and analyzed by AI for scoring and safety.</li>
+        <li>No nudity, harassment, or illegal content. Violations end the match and ban you.</li>
+        <li>Valuations are AI estimates for entertainment — not real appraisals.</li>
       </ul>
       <label class="gate-check">
         <input type="checkbox" id="agreeCheck" />
-        I am 18+ and I agree to the <a href="/terms.html" target="_blank">Terms &amp; Conditions</a>
-        and <a href="/privacy.html" target="_blank">Privacy Policy</a>.
+        <span>I am 18+ and I agree to the
+          <a href="/terms.html" target="_blank">Terms</a> and
+          <a href="/privacy.html" target="_blank">Privacy Policy</a>.</span>
       </label>
-      <button id="enterBtn" disabled>Enter the arena</button>
+      <button id="enterBtn" class="btn btn-primary btn-lg" disabled>Enter the arena</button>
     </div>
   </div>
 
   <!-- Main app -->
-  <main id="app" class="app hidden">
-    <header>
-      <div class="brand">⚔️ Larp Battle</div>
-      <div id="status" class="status">Ready</div>
-      <div id="timer" class="timer hidden">1:00</div>
+  <main id="app" class="app hidden" data-screen="lobby">
+    <header class="topbar">
+      <div class="wordmark sm">LARP<span>BATTLE</span></div>
+      <div id="status" class="status"></div>
+      <div id="timer" class="timer"><span id="timerText">1:00</span></div>
     </header>
 
-    <section class="stage">
-      <div class="video-wrap">
-        <video id="localVideo" autoplay playsinline muted></video>
-        <div class="badge">
-          <span id="localFlag">🏳️</span> You
-          <span id="captureDot" class="capture-dot hidden" title="Capturing frames">●</span>
+    <div class="layout">
+      <!-- Video stage -->
+      <section class="stage">
+        <div class="tile tile-local">
+          <video id="localVideo" autoplay playsinline muted></video>
+          <div class="tile-overlay">
+            <span class="tile-label"><span class="dot-you"></span>You<span id="localCountry" class="loc"></span></span>
+            <span id="recBadge" class="rec-badge">REC</span>
+          </div>
+          <div id="searchScrim" class="scrim">
+            <div class="pulse-ring"></div>
+            <div class="scrim-text">Finding an opponent…</div>
+          </div>
         </div>
-      </div>
-      <div class="vs">VS</div>
-      <div class="video-wrap">
-        <video id="remoteVideo" autoplay playsinline></video>
-        <div class="badge"><span id="remoteFlag">🏳️</span> <span id="remoteLabel">Stranger</span></div>
-      </div>
-    </section>
 
-    <section class="controls">
-      <button id="findBtn" class="primary">🎲 Find a battle</button>
-      <button id="nextBtn" class="hidden">⏭️ Next opponent</button>
-      <button id="reportBtn" class="danger hidden">🚩 Report</button>
-    </section>
+        <div class="tile tile-remote">
+          <video id="remoteVideo" autoplay playsinline></video>
+          <div class="tile-overlay">
+            <span class="tile-label"><span class="dot-them"></span><span id="remoteLabel">Opponent</span><span id="remoteCountry" class="loc"></span></span>
+          </div>
+          <div id="judgeScrim" class="scrim">
+            <div class="spinner"></div>
+            <div class="scrim-text">The judge is scoring the match…</div>
+          </div>
+        </div>
+      </section>
+
+      <!-- How to win (lobby only) -->
+      <aside class="howto" id="howto">
+        <h2>How to win</h2>
+        <ol class="steps">
+          <li><span class="step-n">1</span><div><strong>Show your best items.</strong> Watches, jewelry, cars, designer pieces, electronics — the more valuable, the better.</div></li>
+          <li><span class="step-n">2</span><div><strong>Get them on camera.</strong> Hold each item close and steady so the AI can identify the brand and model.</div></li>
+          <li><span class="step-n">3</span><div><strong>Beat the clock.</strong> Each match is 60 seconds. A frame is captured every second and scored.</div></li>
+          <li><span class="step-n">4</span><div><strong>Authenticity counts.</strong> Genuine pieces score higher than replicas. Higher total wins.</div></li>
+        </ol>
+        <p class="howto-foot">Be respectful. No nudity or harassment — it ends the match instantly.</p>
+      </aside>
+    </div>
+
+    <!-- Controls -->
+    <div class="controls">
+      <button id="findBtn" class="btn btn-primary btn-lg">Find a battle</button>
+      <button id="cancelBtn" class="btn btn-ghost hidden">Cancel</button>
+      <button id="nextBtn" class="btn btn-primary hidden">Next opponent</button>
+      <button id="reportBtn" class="btn btn-danger-ghost hidden">Report</button>
+    </div>
 
     <!-- Verdict -->
     <section id="verdict" class="verdict hidden">
-      <h2 id="verdictTitle">Verdict</h2>
-      <p id="verdictCommentary"></p>
-      <div class="scoreboard">
-        <div class="score-col">
-          <h3 id="scoreTitleYou">You — $0</h3>
-          <table><tbody id="itemsYou"></tbody></table>
+      <div id="verdictBanner" class="verdict-banner">
+        <div id="verdictResult" class="verdict-result">Result</div>
+        <div id="verdictReason" class="verdict-reason"></div>
+      </div>
+
+      <div class="score-duel">
+        <div class="score-side" id="sideYou">
+          <div class="score-who">You</div>
+          <div class="score-num"><span id="scoreYou">0.0</span><span class="score-max">/10</span></div>
+          <div class="score-bar"><i id="barYou"></i></div>
+          <div class="score-total" id="totalYou">$0</div>
         </div>
-        <div class="score-col">
-          <h3 id="scoreTitleThem">Them — $0</h3>
-          <table><tbody id="itemsThem"></tbody></table>
+        <div class="score-vs">vs</div>
+        <div class="score-side" id="sideThem">
+          <div class="score-who" id="whoThem">Opponent</div>
+          <div class="score-num"><span id="scoreThem">0.0</span><span class="score-max">/10</span></div>
+          <div class="score-bar"><i id="barThem"></i></div>
+          <div class="score-total" id="totalThem">$0</div>
         </div>
       </div>
-      <p class="fine-print">
-        AI-estimated used-market values. For entertainment only — not an appraisal.
-      </p>
+
+      <div class="breakdown">
+        <div class="bd-col">
+          <h3>Your items</h3>
+          <ul class="items" id="itemsYou"></ul>
+        </div>
+        <div class="bd-col">
+          <h3 id="itemsThemTitle">Their items</h3>
+          <ul class="items" id="itemsThem"></ul>
+        </div>
+      </div>
+
+      <p class="fine-print">AI-estimated values for entertainment only — not an appraisal.</p>
+      <div class="verdict-cta">
+        <button id="againBtn" class="btn btn-primary btn-lg">Battle again</button>
+      </div>
     </section>
 
-    <footer>
-      <a href="/terms.html">Terms</a> · <a href="/privacy.html">Privacy</a>
+    <footer class="foot">
+      <a href="/terms.html">Terms</a><span>·</span><a href="/privacy.html">Privacy</a>
     </footer>
   </main>
 
