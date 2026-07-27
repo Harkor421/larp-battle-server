@@ -81,12 +81,49 @@ function clientIp(req) {
   return chain[chain.length - hops] || chain[0];
 }
 
-function countryOf(req) {
+// Fast, synchronous best-guess country: Cloudflare header if present, else the
+// offline geoip-lite DB (which can be stale). Used to fill the UI instantly.
+function countryFast(req, ip) {
   const cf = req.headers["cf-ipcountry"];
-  if (cf && cf !== "XX" && cf !== "T1") return String(cf);
-  const ip = clientIp(req);
+  if (cf && cf !== "XX" && cf !== "T1") return String(cf).toUpperCase();
   const hit = geoip.lookup(ip);
   return hit?.country || "??";
+}
+
+function isPublicIp(ip) {
+  if (!ip || ip === "unknown") return false;
+  return !/^(10\.|127\.|192\.168\.|169\.254\.|::1|fc|fd|100\.(6[4-9]|[7-9]\d|1[01]\d|12[0-7])\.|172\.(1[6-9]|2\d|3[01])\.)/i.test(ip);
+}
+
+// Accurate, current country via a live lookup (ipwho.is — free, HTTPS, no key),
+// cached per IP, with the offline DB as fallback. Note: for a user on a VPN this
+// returns the VPN exit country, which is the best any IP lookup can do.
+const geoCache = new Map(); // ip -> { cc, exp }
+const GEO_TTL_MS = 24 * 60 * 60 * 1000;
+
+async function resolveCountry(ip) {
+  const now = Date.now();
+  const cached = geoCache.get(ip);
+  if (cached && cached.exp > now) return cached.cc;
+  let cc = null;
+  if (isPublicIp(ip)) {
+    try {
+      const ctrl = new AbortController();
+      const timer = setTimeout(() => ctrl.abort(), 2500);
+      const res = await fetch(
+        `https://ipwho.is/${encodeURIComponent(ip)}?fields=success,country_code`,
+        { signal: ctrl.signal }
+      );
+      clearTimeout(timer);
+      const j = await res.json();
+      if (j && j.success && j.country_code) cc = String(j.country_code).toUpperCase();
+    } catch {
+      /* fall through to offline DB */
+    }
+  }
+  if (!cc) cc = geoip.lookup(ip)?.country || null;
+  if (cc) geoCache.set(ip, { cc, exp: now + GEO_TTL_MS });
+  return cc;
 }
 
 function send(ws, msg) {
@@ -317,10 +354,24 @@ wss.on("connection", (ws, req) => {
   }
   connByIp.set(ip, openForIp);
   ws.ip = ip;
-  ws.country = countryOf(req);
+  ws.country = countryFast(req, ip); // instant best-guess
   ws.isAlive = true;
   ws.on("pong", () => (ws.isAlive = true));
   send(ws, { type: "hello", country: ws.country });
+
+  // Refine with an accurate live lookup, then update the client's flag. There's
+  // time before the user clicks "Find", so matches use the refined country.
+  const cfHeader = req.headers["cf-ipcountry"];
+  if (!(cfHeader && cfHeader !== "XX" && cfHeader !== "T1")) {
+    resolveCountry(ip)
+      .then((cc) => {
+        if (cc && cc !== ws.country && ws.readyState === WebSocket.OPEN) {
+          ws.country = cc;
+          send(ws, { type: "hello", country: cc });
+        }
+      })
+      .catch(() => {});
+  }
 
   ws.on("message", (raw) => {
     let msg;
