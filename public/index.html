@@ -30,6 +30,17 @@
         <li>No nudity, harassment, or illegal content. Violations end the match and ban you.</li>
         <li>Valuations are AI estimates for entertainment — not real appraisals.</li>
       </ul>
+      <div class="gate-fields">
+        <label class="field">
+          <span class="field-label">Username</span>
+          <input type="text" id="usernameInput" maxlength="20" placeholder="e.g. DiamondHands" autocomplete="off" spellcheck="false" />
+        </label>
+        <label class="field">
+          <span class="field-label">Solana wallet</span>
+          <input type="text" id="walletInput" placeholder="Your SOL address" autocomplete="off" spellcheck="false" />
+        </label>
+        <div class="field-error" id="profileError"></div>
+      </div>
       <label class="gate-check">
         <input type="checkbox" id="agreeCheck" />
         <span>I am 18+ and I agree to the
@@ -53,7 +64,7 @@
       <div class="tile tile-local">
         <video id="localVideo" autoplay playsinline muted></video>
         <div class="tile-overlay">
-          <span class="tile-label"><span class="dot-you"></span>You<span id="localCountry" class="loc"></span></span>
+          <span class="tile-label"><span class="dot-you"></span><span id="localName">You</span><span id="localWallet" class="wallet-chip"></span><span id="localCountry" class="loc"></span></span>
           <span id="recBadge" class="rec-badge">REC</span>
         </div>
         <div id="searchScrim" class="scrim">
@@ -65,7 +76,7 @@
       <div class="tile tile-remote">
         <video id="remoteVideo" autoplay playsinline></video>
         <div class="tile-overlay">
-          <span class="tile-label"><span class="dot-them"></span><span id="remoteLabel">Opponent</span><span id="remoteCountry" class="loc"></span></span>
+          <span class="tile-label"><span class="dot-them"></span><span id="remoteLabel">Opponent</span><span id="remoteWallet" class="wallet-chip"></span><span id="remoteCountry" class="loc"></span></span>
         </div>
         <div id="judgeScrim" class="scrim">
           <div class="spinner"></div>
@@ -115,7 +126,7 @@
 
       <div class="score-duel">
         <div class="score-side" id="sideYou">
-          <div class="score-who">You</div>
+          <div class="score-who" id="whoYou">You</div>
           <div class="score-num"><span id="scoreYou">0.0</span><span class="score-max">/10</span></div>
           <div class="score-bar"><i id="barYou"></i></div>
           <div class="score-total" id="totalYou">$0</div>

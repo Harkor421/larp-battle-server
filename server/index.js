@@ -9,6 +9,7 @@ import geoip from "geoip-lite";
 import { config } from "./config.js";
 import { mountAdmin } from "./admin.js";
 import { judgeBattle, moderateFrame } from "./judge.js";
+import { validateUsername, validateSolanaWallet } from "./profile.js";
 import {
   averageHash,
   hammingDistance,
@@ -167,6 +168,8 @@ function makePlayer(ws, ip, country) {
     ws,
     ip,
     country,
+    username: ws.username || "Anon",
+    wallet: ws.wallet || "",
     token: crypto.randomUUID(),
     ready: false,
     frames: [], // { buf, ts, hash }
@@ -295,6 +298,8 @@ function tryMatch() {
       isCaller: true,
       token: battle.players.A.token,
       peerCountry: battle.players.B.country,
+      peerName: battle.players.B.username,
+      peerWallet: battle.players.B.wallet,
     });
     send(b.ws, {
       ...common,
@@ -302,6 +307,8 @@ function tryMatch() {
       isCaller: false,
       token: battle.players.B.token,
       peerCountry: battle.players.A.country,
+      peerName: battle.players.A.username,
+      peerWallet: battle.players.A.wallet,
     });
 
     // If the pair never gets media flowing, start anyway (frames may still
@@ -393,8 +400,28 @@ wss.on("connection", (ws, req) => {
       return;
     }
     switch (msg.type) {
+      case "set_profile": {
+        const u = validateUsername(msg.username);
+        if (!u.ok) {
+          send(ws, { type: "profile_error", field: "username", reason: u.reason });
+          break;
+        }
+        const w = validateSolanaWallet(msg.wallet);
+        if (!w.ok) {
+          send(ws, { type: "profile_error", field: "wallet", reason: w.reason });
+          break;
+        }
+        ws.username = u.value;
+        ws.wallet = w.value;
+        send(ws, { type: "profile_ok", username: u.value, wallet: w.value });
+        break;
+      }
       case "join_queue": {
         if (bans.has(ws.ip)) return;
+        if (!ws.username || !ws.wallet) {
+          send(ws, { type: "profile_error", reason: "Set your username and Solana wallet first." });
+          return;
+        }
         leaveBattle(ws);
         if (!queue.some((e) => e.ws === ws)) {
           queue.push({ ws, ip: ws.ip, country: ws.country });
