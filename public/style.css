@@ -158,9 +158,11 @@ body {
 #app[data-screen="lobby"] .tile-local { aspect-ratio: 16 / 10; }
 .howto { max-width: 900px; margin: 22px auto 0; border-radius: 22px; }
 
-.stage { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+.stage { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; transition: filter 0.5s var(--ease); }
 #app[data-screen="lobby"] .stage, #app[data-screen="searching"] .stage { grid-template-columns: 1fr; }
-#app[data-screen="verdict"] .stage { display: none; }
+/* On verdict, the cameras stay LIVE behind the modal (you still hear your
+   opponent); the modal's backdrop-filter blurs them. */
+#app[data-screen="verdict"] .stage { pointer-events: none; }
 
 /* ---------- Camera tiles ---------- */
 .tile {
@@ -189,7 +191,7 @@ body {
 .tile video { width: 100%; height: 100%; object-fit: cover; display: block; background: #000; }
 .tile-local video { transform: scaleX(-1); }
 .tile-remote { opacity: 0; transform: scale(0.98); transition: opacity 0.45s var(--ease), transform 0.45s var(--ease); }
-#app[data-screen="connecting"] .tile-remote, #app[data-screen="battle"] .tile-remote, #app[data-screen="judging"] .tile-remote { opacity: 1; transform: scale(1); }
+#app[data-screen="connecting"] .tile-remote, #app[data-screen="battle"] .tile-remote, #app[data-screen="judging"] .tile-remote, #app[data-screen="verdict"] .tile-remote { opacity: 1; transform: scale(1); }
 #app[data-screen="lobby"] .tile-remote, #app[data-screen="searching"] .tile-remote { display: none; }
 #app[data-screen="battle"] .tile-local { box-shadow: 0 0 40px -6px rgba(230, 182, 74, 0.45), 0 20px 50px -28px rgba(0, 0, 0, 0.9); }
 
@@ -260,11 +262,33 @@ body {
 .controls { display: flex; gap: 12px; justify-content: center; padding-top: 24px; }
 #app[data-screen="verdict"] .controls { display: none; }
 
-/* ---------- Verdict ---------- */
-.verdict { display: none; margin-top: 8px; }
-#app[data-screen="verdict"] .verdict { display: block; }
+/* ---------- Verdict (modal over blurred live cameras) ---------- */
+.verdict { display: none; }
+#app[data-screen="verdict"] .verdict {
+  display: flex; position: fixed; inset: 0; z-index: 45;
+  align-items: flex-start; justify-content: center;
+  padding: clamp(16px, 4vh, 48px) 16px; overflow-y: auto;
+  background: radial-gradient(1100px 520px at 50% -5%, rgba(20, 18, 12, 0.4), rgba(6, 7, 11, 0.56));
+  backdrop-filter: blur(16px) saturate(1.1) brightness(0.72);
+  -webkit-backdrop-filter: blur(16px) saturate(1.1) brightness(0.72);
+  animation: fade 0.4s var(--ease);
+}
+.verdict-modal {
+  width: 100%; max-width: 920px; margin: auto 0;
+  display: flex; flex-direction: column; gap: 16px;
+  animation: modalIn 0.55s var(--ease);
+}
+@keyframes modalIn { from { opacity: 0; transform: translateY(26px) scale(0.96); } to { opacity: 1; transform: translateY(0) scale(1); } }
 
-.verdict-banner { text-align: center; padding: 30px 22px 26px; border-radius: 24px; animation: rise 0.55s var(--ease) both; }
+.verdict-banner {
+  position: relative; text-align: center; padding: 32px 22px 26px; border-radius: 24px;
+  animation: rise 0.55s var(--ease) both; overflow: hidden;
+}
+.verdict-banner::before {
+  content: ""; position: absolute; inset: 0 0 auto 0; height: 2px;
+  background: linear-gradient(90deg, transparent, var(--accent), transparent);
+  opacity: 0.7;
+}
 .crown { color: var(--accent); display: none; margin-bottom: 8px; filter: drop-shadow(0 4px 14px rgba(230, 182, 74, 0.6)); }
 .crown.show { display: inline-block; animation: crownDrop 0.75s var(--ease) 0.1s both; }
 @keyframes crownDrop { 0% { opacity: 0; transform: translateY(-26px) scale(0.5) rotate(-14deg); } 60% { opacity: 1; transform: translateY(5px) scale(1.18) rotate(5deg); } 100% { opacity: 1; transform: translateY(0) scale(1) rotate(0); } }
@@ -317,8 +341,10 @@ body {
 .item-val.struck { text-decoration: line-through; color: var(--faint); font-weight: 600; }
 .items-empty { color: var(--faint); font-size: 0.9rem; padding: 10px 2px; }
 
-.fine-print { color: var(--faint); font-size: 0.8rem; text-align: center; margin-top: 18px; }
-.verdict-cta { display: flex; justify-content: center; margin-top: 18px; }
+.fine-print { color: var(--faint); font-size: 0.8rem; text-align: center; margin-top: 4px; }
+.verdict-cta { display: flex; flex-direction: column; align-items: center; gap: 10px; margin-top: 12px; padding-bottom: 8px; }
+.cta-hint { color: var(--muted); font-size: 0.85rem; display: flex; align-items: center; gap: 7px; }
+.cta-hint::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: var(--win); box-shadow: 0 0 10px 1px rgba(58, 209, 138, 0.8); animation: blink 1.6s infinite; }
 .foot { text-align: center; color: var(--faint); padding-top: 28px; font-size: 0.85rem; }
 .foot a { color: var(--faint); text-decoration: none; }
 .foot a:hover { color: var(--muted); }

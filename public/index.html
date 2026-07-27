@@ -20,7 +20,7 @@
     <div class="gate-card">
       <div class="wordmark">LARP<span>BATTLE</span></div>
       <p class="tagline">
-        Get matched with a random stranger. You each have one minute to show off
+        Get matched with a random stranger. You each have 30 seconds to show off
         your most valuable things on camera. An AI judge identifies every item,
         prices it, and scores who flexed harder.
       </p>
@@ -45,7 +45,7 @@
     <header class="topbar">
       <div class="wordmark sm">LARP<span>BATTLE</span></div>
       <div id="status" class="status"></div>
-      <div id="timer" class="timer"><span id="timerText">1:00</span></div>
+      <div id="timer" class="timer"><span id="timerText">0:30</span></div>
     </header>
 
     <!-- Video stage -->
@@ -90,14 +90,15 @@
       <ol class="steps">
         <li><span class="step-n">1</span><div><strong>Show your best items.</strong> Watches, jewelry, cars, designer pieces, electronics — the more valuable, the better.</div></li>
         <li><span class="step-n">2</span><div><strong>Get them on camera.</strong> Hold each item close and steady so the AI can identify the brand and model.</div></li>
-        <li><span class="step-n">3</span><div><strong>Beat the clock.</strong> Each match is 60 seconds. A frame is captured every second and scored.</div></li>
+        <li><span class="step-n">3</span><div><strong>Beat the clock.</strong> Each match is 30 seconds. A frame is captured every second and scored.</div></li>
         <li><span class="step-n">4</span><div><strong>Authenticity counts.</strong> Genuine pieces score higher than replicas. Higher total wins.</div></li>
       </ol>
       <p class="howto-foot">Be respectful. No nudity or harassment — it ends the match instantly.</p>
     </aside>
 
-    <!-- Verdict -->
+    <!-- Verdict (modal over the blurred, still-connected cameras) -->
     <section id="verdict" class="verdict">
+      <div class="verdict-modal">
       <div id="verdictBanner" class="verdict-banner">
         <div class="crown" id="crown" aria-hidden="true">
           <svg viewBox="0 0 64 44" width="52" height="36">
@@ -141,7 +142,9 @@
 
       <p class="fine-print">AI-estimated values for entertainment only — not an appraisal.</p>
       <div class="verdict-cta">
-        <button id="againBtn" class="btn btn-primary btn-lg">Battle again</button>
+        <span class="cta-hint">You can still hear your opponent until you move on.</span>
+        <button id="againBtn" class="btn btn-primary btn-lg">Next opponent</button>
+      </div>
       </div>
     </section>
 

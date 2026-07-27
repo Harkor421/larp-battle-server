@@ -205,7 +205,13 @@
   cancelBtn.addEventListener("click", () => {
     wsSend({ type: "leave_queue" }); setScreen("lobby"); setStatus("Search cancelled.");
   });
-  againBtn.addEventListener("click", () => { hideVerdict(); setScreen("searching"); wsSend({ type: "join_queue" }); });
+  againBtn.addEventListener("click", () => {
+    wsSend({ type: "leave" });
+    teardownBattle(); // now close the call
+    hideVerdict();
+    setScreen("searching");
+    wsSend({ type: "join_queue" });
+  });
   nextBtn.addEventListener("click", () => {
     wsSend({ type: "leave" }); teardownBattle(); hideVerdict();
     setScreen("searching"); wsSend({ type: "join_queue" });
@@ -233,7 +239,11 @@
     pc.onicecandidate = (ev) => { if (ev.candidate) wsSend({ type: "signal", data: { candidate: ev.candidate } }); };
     pc.onconnectionstatechange = () => {
       if (pc.connectionState === "connected") { setStatus("Connected. Get ready…"); wsSend({ type: "ready" }); }
-      else if (["failed", "disconnected"].includes(pc.connectionState)) setStatus("Connection lost.");
+      else if (["failed", "disconnected", "closed"].includes(pc.connectionState)) {
+        setStatus("Connection lost.");
+        const hint = document.querySelector(".cta-hint");
+        if (hint && app.dataset.screen === "verdict") hint.textContent = "Your opponent disconnected.";
+      }
     };
     if (battle.isCaller) {
       const offer = await pc.createOffer();
@@ -437,7 +447,12 @@
   }
 
   function showVerdict(myRole, verdict) {
-    stopCapture(); teardownBattle();
+    // Stop frame capture + the countdown, but KEEP the peer connection alive so
+    // the players can still see/hear each other behind the modal until one of
+    // them hits "Next opponent" (which tears the call down).
+    stopCapture();
+    clearInterval(countdownTimer);
+    $("timer").classList.remove("low");
     verdict = verdict || {};
     const players = Array.isArray(verdict.players) ? verdict.players : [];
     const me = players.find((p) => p && p.player === myRole) || {};
