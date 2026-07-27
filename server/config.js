@@ -22,7 +22,7 @@ export const config = {
     .filter(Boolean),
 
   // Battle
-  battleDurationMs: num("BATTLE_DURATION_MS", 60_000),
+  battleDurationMs: num("BATTLE_DURATION_MS", 30_000),
   frameIntervalMs: num("FRAME_INTERVAL_MS", 1000),
   readyTimeoutMs: num("READY_TIMEOUT_MS", 25_000),
 
