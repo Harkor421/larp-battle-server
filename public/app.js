@@ -33,6 +33,7 @@
   // ---------- State ----------
   let ws = null, pc = null, localStream = null, battle = null;
   let captureTimer = null, countdownTimer = null, pendingCandidates = [];
+  let stopReconnect = false; // set when banned or superseded — don't reconnect
   const captureCanvas = document.createElement("canvas");
 
   const regionFmt = (() => {
@@ -171,6 +172,7 @@
       handleMessage(msg);
     });
     ws.addEventListener("close", () => {
+      if (stopReconnect) return;
       setStatus("Reconnecting…");
       teardownBattle();
       setTimeout(connectWs, 2000);
@@ -182,8 +184,16 @@
     switch (msg.type) {
       case "hello": localCountry.textContent = regionName(msg.country); break;
       case "banned":
+        stopReconnect = true;
+        teardownBattle();
         setStatus("Access blocked: " + (msg.reason || "banned"));
         setScreen("lobby"); findBtn.disabled = true; break;
+      case "superseded":
+        stopReconnect = true;
+        teardownBattle();
+        setScreen("lobby"); findBtn.disabled = true;
+        setStatus((msg.reason || "This session was closed.") + " Reload to play here.");
+        break;
       case "queued": setStatus("Searching for an opponent…"); break;
       case "matched": await onMatched(msg); break;
       case "signal": await onSignal(msg.data); break;

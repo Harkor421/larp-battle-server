@@ -29,7 +29,8 @@ const battles = new Map();
 let queue = [];
 /** ip -> { reason, ts } */
 const bans = new Map();
-/** ip -> open connection count (per-IP cap to blunt single-source DoS) */
+/** ip -> Set<ws> of that IP's active sockets. Enforces one competitor per IP:
+ *  a newer session evicts older ones (so reconnects always succeed). */
 const connByIp = new Map();
 
 const BANS_FILE = path.join(config.dataDir, "bans.json");
@@ -346,14 +347,25 @@ wss.on("connection", (ws, req) => {
     ws.close();
     return;
   }
-  const openForIp = (connByIp.get(ip) || 0) + 1;
-  if (openForIp > config.maxConnPerIp) {
-    send(ws, { type: "banned", reason: "Too many connections from your network." });
-    ws.close();
-    return;
-  }
-  connByIp.set(ip, openForIp);
   ws.ip = ip;
+  // One competitor per IP: evict the IP's older session(s), newest wins. This
+  // also makes it impossible to match two players from the same IP.
+  let ipSet = connByIp.get(ip);
+  if (!ipSet) { ipSet = new Set(); connByIp.set(ip, ipSet); }
+  while (ipSet.size >= config.maxConnPerIp) {
+    const stale = ipSet.values().next().value;
+    ipSet.delete(stale);
+    try {
+      send(stale, {
+        type: "superseded",
+        reason: "You opened Larp Battle in another tab or on another device.",
+      });
+      stale.close();
+    } catch {
+      /* ignore */
+    }
+  }
+  ipSet.add(ws);
   ws.country = countryFast(req, ip); // instant best-guess
   ws.isAlive = true;
   ws.on("pong", () => (ws.isAlive = true));
@@ -423,9 +435,11 @@ wss.on("connection", (ws, req) => {
   ws.on("close", () => {
     queue = queue.filter((e) => e.ws !== ws);
     leaveBattle(ws);
-    const n = (connByIp.get(ws.ip) || 1) - 1;
-    if (n <= 0) connByIp.delete(ws.ip);
-    else connByIp.set(ws.ip, n);
+    const set = connByIp.get(ws.ip);
+    if (set) {
+      set.delete(ws);
+      if (set.size === 0) connByIp.delete(ws.ip);
+    }
   });
 });
 

@@ -34,10 +34,10 @@ export const config = {
     process.env.TRUST_PROXY_HOPS === undefined
       ? 1
       : Math.max(0, Number(process.env.TRUST_PROXY_HOPS) || 0),
-  maxConnPerIp: num("MAX_CONN_PER_IP", 8),
-  // Normally two connections from the same IP are never matched (prevents
-  // self-battle + is pointless). Set true to allow it — useful for solo testing
-  // in two tabs, or during very-low-traffic launch. Leave false in production.
+  // One competitor per IP: max active sessions per IP (newer evicts older).
+  maxConnPerIp: num("MAX_CONN_PER_IP", 1),
+  // With one session per IP this is moot, but kept for defense in depth: never
+  // match two connections that share an IP.
   allowSameIpMatch: process.env.ALLOW_SAME_IP_MATCH === "true",
 
   // Admin panel (disabled unless ADMIN_TOKEN is set)
