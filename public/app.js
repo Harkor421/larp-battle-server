@@ -29,11 +29,19 @@
   const nextBtn = $("nextBtn");
   const reportBtn = $("reportBtn");
   const againBtn = $("againBtn");
+  const usernameInput = $("usernameInput");
+  const walletInput = $("walletInput");
+  const profileError = $("profileError");
+  const localName = $("localName");
+  const localWallet = $("localWallet");
 
   // ---------- State ----------
   let ws = null, pc = null, localStream = null, battle = null;
   let captureTimer = null, countdownTimer = null, pendingCandidates = [];
   let stopReconnect = false; // set when banned or superseded — don't reconnect
+  let myProfile = null;      // { username, wallet } once validated by the server
+  let entered = false;       // whether we've revealed the app past the gate
+  let opponent = null;       // { name, wallet, country } of the current opponent
   const captureCanvas = document.createElement("canvas");
 
   const regionFmt = (() => {
@@ -46,6 +54,10 @@
   }
 
   function setStatus(t) { statusEl.textContent = t || ""; }
+
+  function shortWallet(a) {
+    return typeof a === "string" && a.length >= 10 ? `${a.slice(0, 4)}…${a.slice(-4)}` : (a || "");
+  }
 
   const reduceMotion =
     window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
@@ -138,16 +150,39 @@
     else stopSearchPhrases();
   }
 
-  // ---------- Age gate ----------
-  agreeCheck.addEventListener("change", () => { enterBtn.disabled = !agreeCheck.checked; });
-  enterBtn.addEventListener("click", async () => {
-    localStorage.setItem("larp_tos_accepted", new Date().toISOString());
-    gate.classList.add("hidden");
-    app.classList.remove("hidden");
-    setScreen("lobby");
-    await initMedia();
-    connectWs();
+  // ---------- Age gate + profile ----------
+  // Prefill saved profile
+  usernameInput.value = localStorage.getItem("larp_username") || "";
+  walletInput.value = localStorage.getItem("larp_wallet") || "";
+
+  agreeCheck.addEventListener("change", updateEnterEnabled);
+  usernameInput.addEventListener("input", updateEnterEnabled);
+  walletInput.addEventListener("input", updateEnterEnabled);
+  function updateEnterEnabled() {
+    enterBtn.disabled = !(
+      agreeCheck.checked &&
+      usernameInput.value.trim().length >= 2 &&
+      walletInput.value.trim().length >= 32
+    );
+  }
+  function showProfileError(t) { profileError.textContent = t || ""; }
+
+  enterBtn.addEventListener("click", () => {
+    const username = usernameInput.value.trim().replace(/\s+/g, " ");
+    const wallet = walletInput.value.trim();
+    if (username.length < 2) return showProfileError("Enter a username (2+ characters).");
+    if (wallet.length < 32 || wallet.length > 44)
+      return showProfileError("Enter a valid Solana wallet address.");
+    showProfileError("");
+    enterBtn.disabled = true;
+    myProfile = { username, wallet }; // provisional until server confirms
+    if (ws && ws.readyState === WebSocket.OPEN) sendProfile();
+    else connectWs(); // profile is sent on open
   });
+
+  function sendProfile() {
+    if (myProfile) wsSend({ type: "set_profile", username: myProfile.username, wallet: myProfile.wallet });
+  }
 
   // ---------- Media ----------
   async function initMedia() {
@@ -167,6 +202,11 @@
   // ---------- WebSocket ----------
   function connectWs() {
     ws = new WebSocket(wsUrl());
+    ws.addEventListener("open", () => {
+      // (Re)establish the profile on this connection — the server tracks it per
+      // socket, so reconnects must re-send it.
+      if (myProfile) sendProfile();
+    });
     ws.addEventListener("message", (ev) => {
       let msg; try { msg = JSON.parse(ev.data); } catch { return; }
       handleMessage(msg);
@@ -183,6 +223,28 @@
   async function handleMessage(msg) {
     switch (msg.type) {
       case "hello": localCountry.textContent = regionName(msg.country); break;
+      case "profile_ok": {
+        myProfile = { username: msg.username, wallet: msg.wallet };
+        localStorage.setItem("larp_username", msg.username);
+        localStorage.setItem("larp_wallet", msg.wallet);
+        localName.textContent = msg.username;
+        localWallet.textContent = shortWallet(msg.wallet);
+        if (!entered) {
+          entered = true;
+          localStorage.setItem("larp_tos_accepted", new Date().toISOString());
+          gate.classList.add("hidden");
+          app.classList.remove("hidden");
+          setScreen("lobby");
+          initMedia();
+        }
+        enterBtn.disabled = false;
+        break;
+      }
+      case "profile_error":
+        enterBtn.disabled = false;
+        if (!entered) showProfileError(msg.reason || "Please fix your profile.");
+        else setStatus(msg.reason || "");
+        break;
       case "banned":
         stopReconnect = true;
         teardownBattle();
@@ -238,10 +300,12 @@
       isCaller: msg.isCaller, frameIntervalMs: msg.frameIntervalMs || 1000,
     };
     pendingCandidates = [];
+    opponent = { name: msg.peerName || "Opponent", wallet: msg.peerWallet || "", country: msg.peerCountry };
+    remoteLabel.textContent = opponent.name;
     remoteCountry.textContent = regionName(msg.peerCountry);
-    remoteLabel.textContent = "Opponent";
+    $("remoteWallet").textContent = shortWallet(opponent.wallet);
     setScreen("connecting");
-    setStatus("Opponent found in " + regionName(msg.peerCountry) + ". Connecting…");
+    setStatus(opponent.name + " found in " + regionName(msg.peerCountry) + ". Connecting…");
 
     pc = new RTCPeerConnection({ iceServers: msg.iceServers || [] });
     for (const track of localStream.getTracks()) pc.addTrack(track, localStream);
@@ -469,6 +533,9 @@
     const them = players.find((p) => p && p.player !== myRole) || {};
     const iWon = verdict.winner === myRole;
     const tie = verdict.winner === "tie" || !verdict.winner;
+
+    $("whoYou").textContent = (myProfile && myProfile.username) || "You";
+    $("whoThem").textContent = (opponent && opponent.name) || "Opponent";
 
     const result = $("verdictResult");
     result.textContent = tie ? "Draw" : iWon ? "You win" : "You got larped";

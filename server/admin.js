@@ -127,6 +127,8 @@ export function mountAdmin(app, express, deps) {
     const list = [];
     for (const b of deps.battles.values()) {
       const mk = (p) => ({
+        username: p.username,
+        wallet: p.wallet,
         country: p.country,
         ip: p.ip,
         framesReceived: p.framesReceived,
