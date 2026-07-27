@@ -267,6 +267,16 @@
     setStatus("Live — show your most valuable items.");
     startCountdown(msg.endsAt);
     startCapture();
+    goFlash();
+  }
+
+  function goFlash() {
+    if (reduceMotion) return;
+    const f = $("flash");
+    if (!f) return;
+    f.innerHTML = "<span>GO</span>";
+    f.classList.add("show");
+    setTimeout(() => { f.classList.remove("show"); f.innerHTML = ""; }, 1050);
   }
   function startCountdown(endsAt) {
     clearInterval(countdownTimer);
