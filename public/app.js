@@ -191,6 +191,7 @@
         audio: true,
       });
       localVideo.srcObject = localStream;
+      findBtn.disabled = false;
       setStatus("Camera ready. Start a battle when you are.");
     } catch {
       setStatus("Camera and microphone access is required. Reload and allow access.");
@@ -271,7 +272,14 @@
   }
 
   // ---------- Controls ----------
-  findBtn.addEventListener("click", () => {
+  findBtn.addEventListener("click", async () => {
+    // Make sure the camera is live before queueing — matching without a stream
+    // leaves the opponent stuck on "connecting".
+    if (!localStream || !localStream.getTracks().some((t) => t.readyState === "live")) {
+      setStatus("Turning on your camera…");
+      await initMedia();
+      if (!localStream) { setStatus("Camera and microphone access is required. Allow it, then try again."); return; }
+    }
     hideVerdict(); setScreen("searching"); wsSend({ type: "join_queue" });
   });
   cancelBtn.addEventListener("click", () => {
@@ -307,8 +315,14 @@
     setScreen("connecting");
     setStatus(opponent.name + " found in " + regionName(msg.peerCountry) + ". Connecting…");
 
+    // Camera may not have finished initializing (or was lost). Without a local
+    // stream the connection can't carry media, so (re)acquire it before building
+    // the peer connection — otherwise .getTracks() would throw and the match hangs.
+    if (!localStream || !localStream.getTracks().some((t) => t.readyState === "live")) {
+      await initMedia();
+    }
     pc = new RTCPeerConnection({ iceServers: msg.iceServers || [] });
-    for (const track of localStream.getTracks()) pc.addTrack(track, localStream);
+    if (localStream) { for (const track of localStream.getTracks()) pc.addTrack(track, localStream); }
     pc.ontrack = (ev) => { if (remoteVideo.srcObject !== ev.streams[0]) remoteVideo.srcObject = ev.streams[0]; };
     pc.onicecandidate = (ev) => { if (ev.candidate) wsSend({ type: "signal", data: { candidate: ev.candidate } }); };
     pc.onconnectionstatechange = () => {
