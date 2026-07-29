@@ -9,6 +9,8 @@
     :root { --bg:#0d0f14; --panel:#161a22; --panel2:#1d222d; --text:#e8eaf0; --muted:#8b93a5; --accent:#f5b301; --red:#ff5d5d; --green:#43d17c; }
     * { box-sizing:border-box; margin:0; padding:0; }
     body { background:var(--bg); color:var(--text); font-family:-apple-system,"Segoe UI",Roboto,Arial,sans-serif; }
+    .mono { font-variant-numeric:tabular-nums; }
+    .muted { color:var(--muted); }
     /* login */
     #login { position:fixed; inset:0; display:flex; align-items:center; justify-content:center; }
     .login-card { background:var(--panel); border:1px solid #2a3040; border-radius:14px; padding:32px; width:340px; }
@@ -25,6 +27,9 @@
     .stats { display:flex; gap:18px; color:var(--muted); flex:1; flex-wrap:wrap; }
     .stats b { color:var(--text); }
     .stat-live b { color:var(--green); }
+    .tabs { display:flex; gap:6px; }
+    .tab { background:var(--panel2); color:var(--muted); border:1px solid #2a3040; }
+    .tab.active { background:var(--accent); color:#14110a; border-color:var(--accent); }
     .grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(360px,1fr)); gap:14px; }
     .card { background:var(--panel); border:1px solid #2a3040; border-radius:12px; padding:12px; }
     .card.live { border-color:#2f5d3f; }
@@ -32,6 +37,7 @@
     .badge { padding:2px 8px; border-radius:6px; font-size:.75rem; font-weight:700; }
     .b-live { background:#123; color:var(--green); }
     .b-other { background:#222; color:var(--muted); }
+    .b-win { background:#2a2410; color:var(--accent); }
     .players { display:grid; grid-template-columns:1fr 1fr; gap:8px; }
     .p { background:var(--panel2); border-radius:8px; padding:8px; }
     .p img { width:100%; aspect-ratio:4/3; object-fit:cover; border-radius:6px; background:#000; display:block; margin-bottom:6px; }
@@ -42,6 +48,32 @@
     .empty { color:var(--muted); text-align:center; padding:40px; }
     .bans { margin-top:20px; color:var(--muted); font-size:.85rem; }
     .bans code { color:var(--text); }
+    /* recordings */
+    .rec-bar { display:flex; align-items:center; gap:12px; margin-bottom:12px; }
+    .rec-bar button { padding:6px 12px; font-size:.82rem; }
+    .rec-thumb { position:relative; }
+    .rec-thumb img { width:100%; aspect-ratio:2/1; object-fit:cover; border-radius:8px; background:#000; display:block; }
+    .rec-thumb .play-ov { position:absolute; inset:0; display:flex; align-items:center; justify-content:center; font-size:2.2rem; color:#fff; opacity:.85; text-shadow:0 2px 8px #000; pointer-events:none; }
+    .rec-when { font-size:.75rem; color:var(--muted); }
+    .rec-line { font-size:.82rem; margin-top:6px; line-height:1.5; }
+    .rec-line .win { color:var(--accent); font-weight:700; }
+    /* replay modal */
+    .modal { display:none; position:fixed; inset:0; background:rgba(4,6,10,.82); z-index:50; align-items:center; justify-content:center; padding:20px; }
+    .modal-card { background:var(--panel); border:1px solid #2a3040; border-radius:14px; width:min(980px,100%); max-height:94vh; overflow:auto; padding:16px; }
+    .modal-head { display:flex; justify-content:space-between; align-items:center; gap:12px; margin-bottom:12px; }
+    .modal-head #playerTitle { font-size:1rem; }
+    .modal-head button { padding:6px 12px; font-size:.82rem; }
+    .stage2 { display:grid; grid-template-columns:1fr 1fr; gap:10px; }
+    .cam { background:#000; border:1px solid #2a3040; border-radius:10px; overflow:hidden; }
+    .cam img { width:100%; aspect-ratio:4/3; object-fit:contain; background:#000; display:block; }
+    .cam-cap { padding:8px 10px; font-size:.8rem; color:var(--muted); line-height:1.5; word-break:break-all; }
+    .cam-cap b { color:var(--text); }
+    .cam-cap .sc { color:var(--accent); font-weight:700; }
+    .pcontrols { display:flex; align-items:center; gap:12px; margin-top:12px; flex-wrap:wrap; }
+    .pcontrols #scrub { flex:1; min-width:160px; accent-color:var(--accent); }
+    .pcontrols select { background:var(--panel2); color:var(--text); border:1px solid #2a3040; border-radius:8px; padding:6px 8px; }
+    .pcontrols button { padding:8px 14px; }
+    @media (max-width:640px){ .stage2 { grid-template-columns:1fr; } }
   </style>
 </head>
 <body>
@@ -56,7 +88,7 @@
 
   <div id="dash">
     <header class="bar">
-      <h1>Live Battles</h1>
+      <h1 id="dashTitle">Live Battles</h1>
       <div class="stats">
         <span class="stat-live">Live: <b id="sLive">0</b></span>
         <span>Total tracked: <b id="sTotal">0</b></span>
@@ -64,26 +96,77 @@
         <span>Bans: <b id="sBans">0</b></span>
         <span id="sUpdated" style="opacity:.6"></span>
       </div>
+      <div class="tabs">
+        <button class="tab active" id="tabLive">Live</button>
+        <button class="tab" id="tabRec">Recordings</button>
+      </div>
       <button class="ghost" id="logoutBtn">Log out</button>
     </header>
-    <div class="grid" id="grid"></div>
-    <div class="empty" id="empty">No battles right now.</div>
-    <div class="bans" id="bansBox"></div>
+
+    <section id="liveView">
+      <div class="grid" id="grid"></div>
+      <div class="empty" id="empty">No battles right now.</div>
+      <div class="bans" id="bansBox"></div>
+    </section>
+
+    <section id="recView" style="display:none">
+      <div class="rec-bar">
+        <span class="muted" id="recCount"></span>
+        <button class="ghost" id="recRefresh">Refresh</button>
+      </div>
+      <div class="grid" id="recGrid"></div>
+      <div class="empty" id="recEmpty">No recordings yet. They appear here once battles finish.</div>
+    </section>
+  </div>
+
+  <!-- Replay player -->
+  <div id="player" class="modal">
+    <div class="modal-card">
+      <div class="modal-head">
+        <div id="playerTitle">Replay</div>
+        <button class="ghost" id="playerClose">Close</button>
+      </div>
+      <div class="stage2">
+        <div class="cam"><img id="camA" alt="Player A" /><div class="cam-cap" id="capA"></div></div>
+        <div class="cam"><img id="camB" alt="Player B" /><div class="cam-cap" id="capB"></div></div>
+      </div>
+      <div class="pcontrols">
+        <button id="playBtn">Play</button>
+        <input type="range" id="scrub" min="0" max="1000" value="0" />
+        <span id="ptime" class="mono">0.0s</span>
+        <select id="speed">
+          <option value="0.5">0.5×</option>
+          <option value="1" selected>1×</option>
+          <option value="2">2×</option>
+          <option value="4">4×</option>
+        </select>
+        <button class="red" id="delRec">Delete</button>
+      </div>
+    </div>
   </div>
 
   <script>
     const $ = (id) => document.getElementById(id);
     let pollTimer = null;
+    let activeTab = "live";
 
     function flag(cc) {
       if (!cc || cc.length !== 2 || /[^A-Za-z]/.test(cc)) return "🏳️";
       const A = 0x1f1e6, u = cc.toUpperCase();
       return String.fromCodePoint(A + u.charCodeAt(0) - 65) + String.fromCodePoint(A + u.charCodeAt(1) - 65);
     }
+    function shortWallet(w) { return w && w.length > 10 ? w.slice(0, 4) + "…" + w.slice(-4) : (w || ""); }
+    function ago(ts) {
+      const s = Math.max(0, Math.round((Date.now() - ts) / 1000));
+      if (s < 60) return s + "s ago";
+      if (s < 3600) return Math.floor(s / 60) + "m ago";
+      if (s < 86400) return Math.floor(s / 3600) + "h ago";
+      return Math.floor(s / 86400) + "d ago";
+    }
+    function esc(s) { return String(s == null ? "" : s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c])); }
 
     async function api(path, opts) {
-      const r = await fetch(path, Object.assign({ credentials: "same-origin" }, opts || {}));
-      return r;
+      return fetch(path, Object.assign({ credentials: "same-origin" }, opts || {}));
     }
 
     $("loginForm").addEventListener("submit", async (e) => {
@@ -108,6 +191,22 @@
       $("login").style.display = "flex";
     });
 
+    // ---- tabs ----
+    $("tabLive").addEventListener("click", () => switchTab("live"));
+    $("tabRec").addEventListener("click", () => switchTab("rec"));
+    $("recRefresh").addEventListener("click", loadRecordings);
+
+    function switchTab(tab) {
+      activeTab = tab;
+      const live = tab === "live";
+      $("tabLive").classList.toggle("active", live);
+      $("tabRec").classList.toggle("active", !live);
+      $("liveView").style.display = live ? "block" : "none";
+      $("recView").style.display = live ? "none" : "block";
+      $("dashTitle").textContent = live ? "Live Battles" : "Recorded Battles";
+      if (!live) loadRecordings();
+    }
+
     function showDash() {
       $("login").style.display = "none";
       $("dash").style.display = "block";
@@ -116,6 +215,7 @@
       pollTimer = setInterval(poll, 2000);
     }
 
+    // ---- live battles ----
     function playerHtml(b, role) {
       const p = b[role];
       const canThumb = b.state === "live" && p.storedFrames > 0;
@@ -125,16 +225,13 @@
       return `<div class="p">
         ${img}
         <div class="meta">
-          <div>${flag(p.country)} <b>${role}</b> · ${p.country}</div>
-          <div>IP: <b>${p.ip}</b></div>
+          <div>${flag(p.country)} <b>${esc(p.username)}</b> · ${role} · ${esc(p.country)}</div>
+          <div>IP: <b>${esc(p.ip)}</b></div>
           <div>frames: ${p.storedFrames} stored / ${p.framesReceived} recv</div>
         </div>
-        <div class="row">
-          <button class="red" onclick="banIp('${p.ip}')">Ban ${role}</button>
-        </div>
+        <div class="row"><button class="red" onclick="banIp('${esc(p.ip)}')">Ban ${role}</button></div>
       </div>`;
     }
-
     function cardHtml(b) {
       const live = b.state === "live";
       return `<div class="card ${live ? "live" : ""}">
@@ -143,12 +240,9 @@
           <code style="color:#8b93a5">${b.id.slice(0, 8)}</code>
         </div>
         <div class="players">${playerHtml(b, "A")}${playerHtml(b, "B")}</div>
-        <div class="row">
-          <button class="ghost" onclick="killBattle('${b.id}')">End battle</button>
-        </div>
+        <div class="row"><button class="ghost" onclick="killBattle('${b.id}')">End battle</button></div>
       </div>`;
     }
-
     async function poll() {
       const r = await api("/admin/api/state");
       if (r.status === 401) {
@@ -167,7 +261,7 @@
       $("grid").innerHTML = d.battles.map(cardHtml).join("");
       $("empty").style.display = d.battles.length ? "none" : "block";
       $("bansBox").innerHTML = d.bans.length
-        ? "<strong>Banned IPs:</strong> " + d.bans.map((x) => `<code>${x.ip}</code> (${x.reason || ""})`).join(" · ")
+        ? "<strong>Banned IPs:</strong> " + d.bans.map((x) => `<code>${esc(x.ip)}</code> (${esc(x.reason || "")})`).join(" · ")
         : "";
     }
 
@@ -186,6 +280,133 @@
       });
       poll();
     };
+
+    // ---- recordings ----
+    async function loadRecordings() {
+      const r = await api("/admin/api/recordings");
+      if (!r.ok) return;
+      const d = await r.json();
+      const recs = d.recordings || [];
+      $("recCount").textContent = recs.length + " recording" + (recs.length === 1 ? "" : "s");
+      $("recEmpty").style.display = recs.length ? "none" : "block";
+      $("recGrid").innerHTML = recs.map(recCard).join("");
+    }
+    function sideLine(s, role, winner) {
+      const won = winner === role;
+      const sc = s.score != null ? ` · <span class="${won ? "win" : ""}">${Number(s.score).toFixed(1)}/10</span>` : "";
+      return `${flag(s.country)} <b>${esc(s.username)}</b>${won ? " 👑" : ""}${sc}<br><span class="muted">${esc(shortWallet(s.wallet)) || "no wallet"}</span>`;
+    }
+    function recCard(r) {
+      const thumb = `/admin/api/recordings/${r.id}/frame/A/0`;
+      const fb = `/admin/api/recordings/${r.id}/frame/B/0`;
+      return `<div class="card">
+        <div class="rec-thumb" onclick="openPlayer('${r.id}')" style="cursor:pointer">
+          <img src="${thumb}" onerror="this.onerror=null;this.src='${fb}'" alt="thumb"/>
+          <div class="play-ov">▶</div>
+        </div>
+        <div class="card-head" style="margin-top:8px">
+          <span class="rec-when">${ago(r.endedAt)}</span>
+          <code style="color:#8b93a5">${r.id.slice(0, 8)}</code>
+        </div>
+        <div class="rec-line">${sideLine(r.A, "A", r.winner)}</div>
+        <div class="rec-line" style="margin-top:4px">${sideLine(r.B, "B", r.winner)}</div>
+        <div class="rec-line muted" style="margin-top:6px">${r.aFrames + r.bFrames} frames · ${Math.round((r.durationMs || 0) / 1000)}s</div>
+        <div class="row">
+          <button onclick="openPlayer('${r.id}')">Replay</button>
+          <button class="red" onclick="delRecording('${r.id}')">Delete</button>
+        </div>
+      </div>`;
+    }
+    window.delRecording = async (id) => {
+      if (!confirm("Delete this recording permanently?")) return;
+      await api(`/admin/api/recordings/${id}`, { method: "DELETE" });
+      loadRecordings();
+    };
+
+    // ---- replay player (master-clock synced dual camera) ----
+    let P = null;
+
+    function caption(meta, role) {
+      const p = meta.players[role] || {};
+      const v = (meta.verdict && meta.verdict.players || []).find((x) => x.player === role);
+      const won = meta.winner === role;
+      const sc = v ? `<span class="sc">${Number(v.score).toFixed(1)}/10</span>${v.total != null ? " · $" + Number(v.total).toLocaleString() : ""}` : "";
+      return `${flag(p.country)} <b>${esc(p.username)}</b> · ${role}${won ? " 👑" : ""}<br>${esc(shortWallet(p.wallet)) || "no wallet"}<br>${sc}`;
+    }
+    function frameIdxAt(fr, clock) {
+      let idx = 0;
+      for (let i = 0; i < fr.length; i++) { if (fr[i].t <= clock) idx = i; else break; }
+      return idx;
+    }
+    function renderClock() {
+      if (!P) return;
+      if (P.A.fr.length) $("camA").src = P.A.urls[frameIdxAt(P.A.fr, P.clock)];
+      if (P.B.fr.length) $("camB").src = P.B.urls[frameIdxAt(P.B.fr, P.clock)];
+      $("scrub").value = Math.round(P.clock);
+      $("ptime").textContent = (P.clock / 1000).toFixed(1) + "s";
+    }
+    function tick(ts) {
+      if (!P || !P.playing) return;
+      if (!P.last) P.last = ts;
+      P.clock += (ts - P.last) * P.speed;
+      P.last = ts;
+      if (P.clock >= P.dur) { P.clock = P.dur; renderClock(); pausePlay(); return; }
+      renderClock();
+      P.raf = requestAnimationFrame(tick);
+    }
+    function startPlay() {
+      if (!P) return;
+      if (P.clock >= P.dur) P.clock = 0;
+      P.playing = true; P.last = 0;
+      $("playBtn").textContent = "Pause";
+      P.raf = requestAnimationFrame(tick);
+    }
+    function pausePlay() {
+      if (!P) return;
+      P.playing = false;
+      $("playBtn").textContent = "Play";
+      cancelAnimationFrame(P.raf);
+    }
+
+    window.openPlayer = async (id) => {
+      const r = await api("/admin/api/recordings/" + id);
+      if (!r.ok) return;
+      const meta = await r.json();
+      const mk = (role) => {
+        const fr = (meta.frames && meta.frames[role]) || [];
+        const urls = fr.map((f) => `/admin/api/recordings/${id}/frame/${role}/${f.i}`);
+        urls.forEach((u) => { const im = new Image(); im.src = u; }); // preload
+        return { fr, urls };
+      };
+      const A = mk("A"), B = mk("B");
+      const lastA = A.fr.length ? A.fr[A.fr.length - 1].t : 0;
+      const lastB = B.fr.length ? B.fr[B.fr.length - 1].t : 0;
+      const dur = Math.max(lastA, lastB, meta.durationMs || 0, 1000);
+      P = { id, A, B, dur, clock: 0, playing: false, speed: Number($("speed").value) || 1, raf: null, last: 0 };
+      $("playerTitle").innerHTML = `Replay · ${meta.winner ? "winner " + meta.winner + " 👑" : "draw"} · ${new Date(meta.endedAt).toLocaleString()}`;
+      $("capA").innerHTML = caption(meta, "A");
+      $("capB").innerHTML = caption(meta, "B");
+      $("scrub").max = Math.round(dur);
+      $("camA").style.visibility = A.fr.length ? "visible" : "hidden";
+      $("camB").style.visibility = B.fr.length ? "visible" : "hidden";
+      renderClock();
+      $("player").style.display = "flex";
+      startPlay();
+    };
+    function closePlayer() {
+      pausePlay();
+      P = null;
+      $("player").style.display = "none";
+      $("camA").removeAttribute("src");
+      $("camB").removeAttribute("src");
+    }
+    $("playerClose").addEventListener("click", closePlayer);
+    $("player").addEventListener("click", (e) => { if (e.target.id === "player") closePlayer(); });
+    $("playBtn").addEventListener("click", () => { if (!P) return; P.playing ? pausePlay() : startPlay(); });
+    $("scrub").addEventListener("input", () => { if (!P) return; pausePlay(); P.clock = Number($("scrub").value); renderClock(); });
+    $("speed").addEventListener("change", () => { if (P) P.speed = Number($("speed").value) || 1; });
+    $("delRec").addEventListener("click", () => { if (P) { const id = P.id; closePlayer(); window.delRecording(id); } });
+    document.addEventListener("keydown", (e) => { if (e.key === "Escape" && P) closePlayer(); });
 
     // If already authed (valid cookie), jump straight to the dashboard.
     (async () => {

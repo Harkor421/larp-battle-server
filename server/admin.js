@@ -3,6 +3,12 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { config } from "./config.js";
 import { getLeaderboard, distribute } from "./leaderboard.js";
+import {
+  listRecordings,
+  getRecordingMeta,
+  getFramePath,
+  deleteRecording,
+} from "./recordings.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -191,6 +197,34 @@ export function mountAdmin(app, express, deps) {
       }
     }
     res.json({ ok: true });
+  });
+
+  // ---- Recordings (persisted to the volume) ----
+
+  // Newest-first list of saved battle recordings for the grid.
+  app.get("/admin/api/recordings", requireAuth, (_req, res) => {
+    res.json({ recordings: listRecordings() });
+  });
+
+  // Full metadata for one recording (players, verdict, per-frame timings).
+  app.get("/admin/api/recordings/:id", requireAuth, (req, res) => {
+    const meta = getRecordingMeta(req.params.id);
+    if (!meta) return res.status(404).json({ error: "not found" });
+    res.json(meta);
+  });
+
+  // A single recorded frame image.
+  app.get("/admin/api/recordings/:id/frame/:role/:idx", requireAuth, (req, res) => {
+    const file = getFramePath(req.params.id, req.params.role, req.params.idx);
+    if (!file) return res.status(404).end();
+    res.setHeader("Cache-Control", "private, max-age=3600");
+    res.sendFile(file, { headers: { "Content-Type": "image/jpeg" } });
+  });
+
+  // Delete a recording from the volume.
+  app.delete("/admin/api/recordings/:id", requireAuth, async (req, res) => {
+    const ok = await deleteRecording(req.params.id);
+    res.json({ ok });
   });
 
   // Leaderboard snapshot for the admin dashboard.
