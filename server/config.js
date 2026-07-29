@@ -76,6 +76,15 @@ export const config = {
   maxJudgeFramesPerPlayer: num("MAX_JUDGE_FRAMES_PER_PLAYER", 24),
   judgeAllFrames: process.env.JUDGE_ALL_FRAMES === "true",
 
+  // Battle recordings — persisted to the volume and replayable in the admin
+  // panel. Frames are re-encoded smaller than the judge frames to save space.
+  recordingsEnabled: process.env.RECORDINGS_ENABLED !== "false",
+  recordingFrameEdge: num("RECORDING_FRAME_EDGE", 640),
+  recordingJpegQuality: num("RECORDING_JPEG_QUALITY", 68),
+  recordingMaxFrames: num("RECORDING_MAX_FRAMES", 90),
+  // Keep at most this many recordings on the volume; oldest are pruned.
+  maxRecordings: num("MAX_RECORDINGS", 200),
+
   // Moderation (OpenAI omni-moderation-latest is free)
   moderationEveryNFrames: num("MODERATION_EVERY_N_FRAMES", 5),
   moderationAbortCategories: (

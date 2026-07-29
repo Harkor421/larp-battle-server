@@ -11,6 +11,7 @@ import { mountAdmin } from "./admin.js";
 import { judgeBattle, moderateFrame } from "./judge.js";
 import { validateUsername, validateSolanaWallet } from "./profile.js";
 import { recordBattle, getLeaderboard, getPayouts, startPayoutScheduler } from "./leaderboard.js";
+import { saveRecording } from "./recordings.js";
 import {
   averageHash,
   hammingDistance,
@@ -226,6 +227,9 @@ async function endBattle(battle) {
     const score = verdict.players?.find((x) => x.player === role)?.score || 0;
     recordBattle({ wallet: p.wallet, username: p.username, score, won: verdict.winner === role });
   }
+  // Persist a replayable recording to the volume (viewable in the admin panel).
+  // Fire-and-forget: `chosen` frame refs keep the buffers alive past cleanup.
+  saveRecording(battle).catch((err) => console.error("[rec]", err?.message));
   // Keep the battle around briefly so late frame uploads 404 cleanly and
   // reports can still grab evidence, then free the memory.
   battle.cleanupTimer = setTimeout(() => destroyBattle(battle.id), 120_000);
