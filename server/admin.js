@@ -7,6 +7,7 @@ import {
   listRecordings,
   getRecordingMeta,
   getFramePath,
+  getVideoPath,
   deleteRecording,
 } from "./recordings.js";
 
@@ -219,6 +220,14 @@ export function mountAdmin(app, express, deps) {
     if (!file) return res.status(404).end();
     res.setHeader("Cache-Control", "private, max-age=3600");
     res.sendFile(file, { headers: { "Content-Type": "image/jpeg" } });
+  });
+
+  // The full video+audio clip for one side of a recording.
+  app.get("/admin/api/recordings/:id/video/:role", requireAuth, (req, res) => {
+    const v = getVideoPath(req.params.id, req.params.role);
+    if (!v) return res.status(404).end();
+    res.setHeader("Cache-Control", "private, max-age=3600");
+    res.sendFile(v.path, { headers: { "Content-Type": v.mime } });
   });
 
   // Delete a recording from the volume.

@@ -10,8 +10,9 @@ import { config } from "./config.js";
 import { mountAdmin } from "./admin.js";
 import { judgeBattle, moderateFrame } from "./judge.js";
 import { validateUsername, validateSolanaWallet } from "./profile.js";
-import { recordBattle, getLeaderboard, getPayouts, startPayoutScheduler } from "./leaderboard.js";
-import { saveRecording } from "./recordings.js";
+import { recordBattle, getLeaderboard, getPayouts, startPayoutScheduler, initLeaderboardStore } from "./leaderboard.js";
+import { saveRecording, saveRecordingVideo, initRecordingsStore } from "./recordings.js";
+import { initMongo, col } from "./db.js";
 import {
   averageHash,
   hammingDistance,
@@ -55,9 +56,32 @@ function persistBans() {
   }
 }
 
+// Load bans from MongoDB on startup (when enabled); seed Mongo from the file if
+// Mongo is empty. Falls back to the file-loaded set on any error.
+async function initBansStore() {
+  const c = col("bans");
+  if (!c) return;
+  try {
+    const docs = await c.find({}).toArray();
+    if (docs.length) {
+      bans.clear();
+      for (const d of docs) bans.set(d._id, { reason: d.reason, ts: d.ts });
+      console.log(`[bans] loaded ${bans.size} ban(s) from MongoDB`);
+    } else if (bans.size) {
+      for (const [ip, info] of bans) c.updateOne({ _id: ip }, { $set: info }, { upsert: true }).catch(() => {});
+    }
+  } catch (err) {
+    console.error("[bans] mongo init failed (using file):", err?.message);
+  }
+}
+
 function banIp(ip, reason) {
-  bans.set(ip, { reason, ts: new Date().toISOString() });
+  const info = { reason, ts: new Date().toISOString() };
+  bans.set(ip, info);
   persistBans();
+  col("bans")?.updateOne({ _id: ip }, { $set: info }, { upsert: true }).catch((err) =>
+    console.error("[bans] mongo upsert failed:", err?.message)
+  );
   console.log(`[bans] banned ${ip}: ${reason}`);
 }
 
@@ -663,9 +687,43 @@ app.post(
   }
 );
 
+// Full battle video+audio: the client records the stage view (both cameras +
+// mixed audio) with MediaRecorder and uploads the .webm when the match ends.
+// Accepted briefly after the battle leaves "live" (during judging/just-ended)
+// so the upload, which starts on match end, still lands.
+app.post(
+  "/api/battle/:id/recording",
+  express.raw({ type: ["video/webm", "video/mp4", "application/octet-stream"], limit: config.maxRecordingBytes }),
+  async (req, res) => {
+    if (!config.videoRecordingEnabled) return res.status(404).json({ error: "disabled" });
+    const battle = battles.get(req.params.id);
+    const token = req.headers["x-battle-token"];
+    if (!battle) return res.status(404).json({ error: "no battle" });
+    const role = battle.players.A.token === token ? "A"
+      : battle.players.B.token === token ? "B"
+      : null;
+    if (!role) return res.status(403).json({ error: "bad token" });
+    if (bans.has(battle.players[role].ip)) return res.status(403).json({ error: "banned" });
+    if (!req.body?.length) return res.status(400).json({ error: "empty" });
+    const mime = String(req.headers["content-type"] || "").includes("mp4") ? "mp4" : "webm";
+    try {
+      await saveRecordingVideo(battle, role, req.body, mime);
+      res.json({ ok: true, bytes: req.body.length });
+    } catch (err) {
+      console.error("[rec] video save failed:", err?.message);
+      res.status(500).json({ error: "save failed" });
+    }
+  }
+);
+
 // ---------------------------------------------------------------------------
 
-server.listen(config.port, () => {
-  console.log(`larp-battle listening on http://localhost:${config.port}`);
-  startPayoutScheduler();
-});
+async function boot() {
+  await initMongo();
+  await Promise.all([initLeaderboardStore(), initBansStore(), initRecordingsStore()]);
+  server.listen(config.port, () => {
+    console.log(`larp-battle listening on http://localhost:${config.port}`);
+    startPayoutScheduler();
+  });
+}
+boot();

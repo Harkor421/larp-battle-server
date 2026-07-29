@@ -4,6 +4,7 @@
 
   // ---------- Backend origin (empty = same origin) ----------
   const BACKEND = (window.LARP_CONFIG && window.LARP_CONFIG.backendOrigin) || "";
+  const VIDEO_REC = !(window.LARP_CONFIG && window.LARP_CONFIG.videoRecording === false);
   function wsUrl() {
     if (BACKEND) return BACKEND.replace(/^http/i, "ws") + "/ws";
     const proto = location.protocol === "https:" ? "wss" : "ws";
@@ -38,6 +39,8 @@
   // ---------- State ----------
   let ws = null, pc = null, localStream = null, battle = null;
   let captureTimer = null, countdownTimer = null, pendingCandidates = [];
+  // Full battle video+audio recording (client-side, uploaded on match end).
+  let recorder = null, recChunks = [], recCanvas = null, recRAF = null, recAudioCtx = null;
   let stopReconnect = false; // set when banned or superseded — don't reconnect
   let myProfile = null;      // { username, wallet } once validated by the server
   let entered = false;       // whether we've revealed the app past the gate
@@ -257,7 +260,7 @@
       case "matched": await onMatched(msg); break;
       case "signal": await onSignal(msg.data); break;
       case "battle_start": onBattleStart(msg); break;
-      case "judging": stopCapture(); setScreen("judging"); setStatus("Scoring the match…"); break;
+      case "judging": stopCapture(); stopRecording(true); setScreen("judging"); setStatus("Scoring the match…"); break;
       case "verdict": showVerdict(msg.role, msg.verdict); break;
       case "battle_aborted":
         setStatus(msg.reason || "Match ended.");
@@ -348,6 +351,7 @@
     setStatus("Live — show your most valuable items.");
     startCountdown(msg.endsAt);
     startCapture();
+    startRecording();
     goFlash();
   }
 
@@ -399,8 +403,117 @@
   }
   function stopCapture() { clearInterval(captureTimer); captureTimer = null; }
 
+  // ---------- Full video+audio recording ----------
+  // We composite BOTH camera tiles onto a canvas (how the battle actually looks)
+  // and mix both audio tracks, then record it with MediaRecorder and upload the
+  // clip when the match ends. Degrades silently where MediaRecorder is missing.
+  function pickRecMime() {
+    const cands = [
+      "video/webm;codecs=vp9,opus",
+      "video/webm;codecs=vp8,opus",
+      "video/webm",
+      "video/mp4",
+    ];
+    if (!window.MediaRecorder) return "";
+    for (const c of cands) { try { if (MediaRecorder.isTypeSupported(c)) return c; } catch {} }
+    return "";
+  }
+  function drawRecTile(ctx, video, x, w, h, label, cc) {
+    ctx.save();
+    ctx.beginPath(); ctx.rect(x, 0, w, h); ctx.clip();
+    ctx.fillStyle = "#0a0f0b"; ctx.fillRect(x, 0, w, h);
+    const vw = video.videoWidth, vh = video.videoHeight;
+    if (vw && vh) {
+      const scale = Math.max(w / vw, h / vh); // cover
+      const dw = vw * scale, dh = vh * scale;
+      ctx.drawImage(video, x + (w - dw) / 2, (h - dh) / 2, dw, dh);
+    }
+    // label bar
+    const grad = ctx.createLinearGradient(0, h - 64, 0, h);
+    grad.addColorStop(0, "rgba(0,0,0,0)"); grad.addColorStop(1, "rgba(0,0,0,.72)");
+    ctx.fillStyle = grad; ctx.fillRect(x, h - 64, w, 64);
+    ctx.fillStyle = "#eafff3";
+    ctx.font = "600 22px 'Space Grotesk', system-ui, sans-serif";
+    ctx.textBaseline = "alphabetic";
+    ctx.fillText(String(label || "").slice(0, 22), x + 18, h - 26);
+    if (cc) { ctx.fillStyle = "#7d9a88"; ctx.font = "500 15px system-ui, sans-serif"; ctx.fillText(String(cc).slice(0, 24), x + 18, h - 8); }
+    ctx.restore();
+  }
+  function startRecording() {
+    if (!VIDEO_REC || !localStream) return;
+    const mime = pickRecMime();
+    if (!mime && window.MediaRecorder) { /* let MR pick default */ }
+    try {
+      recCanvas = document.createElement("canvas");
+      recCanvas.width = 1280; recCanvas.height = 480; // two 640×480 tiles
+      const ctx = recCanvas.getContext("2d");
+      const W = 640, H = 480;
+      const draw = () => {
+        ctx.fillStyle = "#050705"; ctx.fillRect(0, 0, 1280, 480);
+        drawRecTile(ctx, localVideo, 0, W, H, (myProfile && myProfile.username) || "You", localCountry.textContent);
+        drawRecTile(ctx, remoteVideo, W, W, H, (opponent && opponent.name) || "Opponent", remoteCountry.textContent);
+        // center VS chip
+        ctx.fillStyle = "rgba(5,7,5,.85)";
+        ctx.beginPath(); ctx.arc(640, 240, 30, 0, Math.PI * 2); ctx.fill();
+        ctx.fillStyle = "#2fd272"; ctx.font = "700 24px 'Space Grotesk', system-ui, sans-serif";
+        ctx.textAlign = "center"; ctx.textBaseline = "middle"; ctx.fillText("VS", 640, 241);
+        ctx.textAlign = "left";
+        recRAF = requestAnimationFrame(draw);
+      };
+      draw();
+      const canvasStream = recCanvas.captureStream(24);
+      // Mix local mic + remote audio into one track.
+      const AC = window.AudioContext || window.webkitAudioContext;
+      let audioTracks = [];
+      if (AC) {
+        recAudioCtx = new AC();
+        const dest = recAudioCtx.createMediaStreamDestination();
+        const la = localStream.getAudioTracks();
+        if (la[0]) recAudioCtx.createMediaStreamSource(new MediaStream([la[0]])).connect(dest);
+        const rs = remoteVideo.srcObject;
+        if (rs) { const ra = rs.getAudioTracks(); if (ra[0]) recAudioCtx.createMediaStreamSource(new MediaStream([ra[0]])).connect(dest); }
+        audioTracks = dest.stream.getAudioTracks();
+      }
+      const mixed = new MediaStream([...canvasStream.getVideoTracks(), ...audioTracks]);
+      recorder = new MediaRecorder(mixed, mime ? { mimeType: mime, videoBitsPerSecond: 2_000_000 } : undefined);
+      recChunks = [];
+      recorder.ondataavailable = (e) => { if (e.data && e.data.size) recChunks.push(e.data); };
+      recorder.start(1000);
+    } catch (err) {
+      console.warn("recording unavailable:", err && err.message);
+      cleanupRecorder();
+    }
+  }
+  function cleanupRecorder() {
+    if (recRAF) cancelAnimationFrame(recRAF);
+    recRAF = null;
+    try { recAudioCtx && recAudioCtx.close(); } catch {}
+    recAudioCtx = null; recCanvas = null;
+  }
+  async function stopRecording(upload) {
+    const rec = recorder;
+    if (!rec) return;
+    recorder = null;
+    const b = battle;
+    const done = new Promise((res) => { rec.onstop = res; });
+    try { rec.state !== "inactive" && rec.stop(); } catch {}
+    await done.catch(() => {});
+    cleanupRecorder();
+    const chunks = recChunks; recChunks = [];
+    if (!upload || !b || !chunks.length) return;
+    const type = (rec.mimeType || "").includes("mp4") ? "video/mp4" : "video/webm";
+    const blob = new Blob(chunks, { type });
+    if (blob.size < 2000) return; // nothing meaningful captured
+    fetch(apiUrl(`/api/battle/${b.id}/recording`), {
+      method: "POST",
+      headers: { "Content-Type": type, "X-Battle-Token": b.token },
+      body: blob,
+    }).catch(() => {});
+  }
+
   function teardownBattle() {
     stopCapture();
+    stopRecording(true); // stop + upload if still recording (e.g. skipped mid-match)
     clearInterval(countdownTimer);
     $("timer").classList.remove("low");
     if (pc) { pc.close(); pc = null; }
@@ -597,7 +710,9 @@
     try {
       const d = await (await fetch(apiUrl("/api/leaderboard"))).json();
       nextPayoutAt = d.nextPayoutAt || nextPayoutAt;
-      railPotSol.textContent = d.pot && d.pot.configured ? d.pot.sol : "—";
+      // The "prize pot" shown is the distributable pool (a % of the wallet, 80%
+      // by default); the rest stays in the wallet as a buffer.
+      railPotSol.textContent = d.pot && d.pot.configured ? d.pot.poolSol : "—";
       renderRail(d.entries || []);
     } catch { /* keep last */ }
   }

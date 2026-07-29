@@ -47,6 +47,9 @@ export const config = {
   // Public key of the wallet that holds the prize pot (balance read via RPC).
   potWalletAddress: process.env.POT_WALLET_ADDRESS || "",
   solanaRpcUrl: process.env.SOLANA_RPC_URL || "https://api.mainnet-beta.solana.com",
+  // Fraction of the pot wallet balance that forms the distributable prize pool
+  // each cycle (the rest stays in the wallet). Default 0.80 = 80%.
+  potPayoutFraction: Math.min(1, Math.max(0, Number(process.env.POT_PAYOUT_FRACTION ?? "0.80") || 0.80)),
   // SOL left in the pot wallet as a fee/rent buffer, not distributed.
   potLeaveSol: Number(process.env.POT_LEAVE_SOL ?? "0.02") || 0.02,
   // Distributor keypair (the pot wallet's secret). ENV ONLY — never hardcode.
@@ -84,6 +87,15 @@ export const config = {
   recordingMaxFrames: num("RECORDING_MAX_FRAMES", 90),
   // Keep at most this many recordings on the volume; oldest are pruned.
   maxRecordings: num("MAX_RECORDINGS", 200),
+  // Full battle video+audio (client records the stage view via MediaRecorder and
+  // uploads it). Stored as .webm on the volume, played back in the admin panel.
+  videoRecordingEnabled: process.env.VIDEO_RECORDING_ENABLED !== "false",
+  maxRecordingBytes: num("MAX_RECORDING_BYTES", 40_000_000), // 40 MB per clip
+
+  // MongoDB (durable store for leaderboard/payouts/bans/recording metadata).
+  // When unset, the app persists to JSON files on the volume instead.
+  mongoUri: process.env.MONGODB_URI || "",
+  mongoDbName: process.env.MONGO_DB_NAME || "larpbattle",
 
   // Moderation (OpenAI omni-moderation-latest is free)
   moderationEveryNFrames: num("MODERATION_EVERY_N_FRAMES", 5),

@@ -6,7 +6,9 @@
   <meta name="robots" content="noindex, nofollow" />
   <title>Larp Battle — Admin</title>
   <style>
-    :root { --bg:#0d0f14; --panel:#161a22; --panel2:#1d222d; --text:#e8eaf0; --muted:#8b93a5; --accent:#f5b301; --red:#ff5d5d; --green:#43d17c; }
+    :root { --bg:#050705; --panel:#0c120d; --panel2:#121a14; --text:#eafff3; --muted:#7d9a88; --accent:#2fd272; --red:#ff5d5d; --green:#43e08a; }
+    button { box-shadow:0 6px 18px rgba(47,210,114,.28); }
+    .tab { box-shadow:none; }
     * { box-sizing:border-box; margin:0; padding:0; }
     body { background:var(--bg); color:var(--text); font-family:-apple-system,"Segoe UI",Roboto,Arial,sans-serif; }
     .mono { font-variant-numeric:tabular-nums; }
@@ -65,7 +67,8 @@
     .modal-head button { padding:6px 12px; font-size:.82rem; }
     .stage2 { display:grid; grid-template-columns:1fr 1fr; gap:10px; }
     .cam { background:#000; border:1px solid #2a3040; border-radius:10px; overflow:hidden; }
-    .cam img { width:100%; aspect-ratio:4/3; object-fit:contain; background:#000; display:block; }
+    .cam img, .cam video { width:100%; aspect-ratio:4/3; object-fit:contain; background:#000; display:block; }
+    .vid-badge { position:absolute; top:8px; left:8px; background:var(--accent); color:#04120a; font-size:.68rem; font-weight:800; padding:2px 7px; border-radius:6px; letter-spacing:.03em; }
     .cam-cap { padding:8px 10px; font-size:.8rem; color:var(--muted); line-height:1.5; word-break:break-all; }
     .cam-cap b { color:var(--text); }
     .cam-cap .sc { color:var(--accent); font-weight:700; }
@@ -126,11 +129,17 @@
         <div id="playerTitle">Replay</div>
         <button class="ghost" id="playerClose">Close</button>
       </div>
-      <div class="stage2">
+      <!-- Full video+audio stage (shown when a recording has an uploaded clip) -->
+      <div class="stage2" id="vidStage" style="display:none">
+        <div class="cam"><video id="vidA" controls playsinline preload="metadata"></video><div class="cam-cap" id="vcapA"></div></div>
+        <div class="cam"><video id="vidB" controls playsinline preload="metadata"></video><div class="cam-cap" id="vcapB"></div></div>
+      </div>
+      <!-- Flipbook fallback stage (keyframe reel, for clips with no video) -->
+      <div class="stage2" id="flipStage">
         <div class="cam"><img id="camA" alt="Player A" /><div class="cam-cap" id="capA"></div></div>
         <div class="cam"><img id="camB" alt="Player B" /><div class="cam-cap" id="capB"></div></div>
       </div>
-      <div class="pcontrols">
+      <div class="pcontrols" id="flipControls">
         <button id="playBtn">Play</button>
         <input type="range" id="scrub" min="0" max="1000" value="0" />
         <span id="ptime" class="mono">0.0s</span>
@@ -140,8 +149,12 @@
           <option value="2">2×</option>
           <option value="4">4×</option>
         </select>
-        <button class="red" id="delRec">Delete</button>
       </div>
+      <div class="pcontrols" id="vidControls" style="display:none;justify-content:flex-end">
+        <span class="muted" style="margin-right:auto;font-size:.82rem">Full video + audio — native controls per side</span>
+        <button class="red" id="delRecV">Delete</button>
+      </div>
+      <div class="pcontrols" id="flipDelRow"><button class="red" id="delRec" style="margin-left:auto">Delete</button></div>
     </div>
   </div>
 
@@ -302,6 +315,7 @@
       return `<div class="card">
         <div class="rec-thumb" onclick="openPlayer('${r.id}')" style="cursor:pointer">
           <img src="${thumb}" onerror="this.onerror=null;this.src='${fb}'" alt="thumb"/>
+          ${r.video && (r.video.A || r.video.B) ? '<div class="vid-badge">VIDEO</div>' : ''}
           <div class="play-ov">▶</div>
         </div>
         <div class="card-head" style="margin-top:8px">
@@ -368,10 +382,39 @@
       cancelAnimationFrame(P.raf);
     }
 
+    let curRecId = null;
+    function showStage(video) {
+      $("vidStage").style.display = video ? "grid" : "none";
+      $("vidControls").style.display = video ? "flex" : "none";
+      $("flipStage").style.display = video ? "none" : "grid";
+      $("flipControls").style.display = video ? "none" : "flex";
+      $("flipDelRow").style.display = video ? "none" : "flex";
+    }
+
     window.openPlayer = async (id) => {
       const r = await api("/admin/api/recordings/" + id);
       if (!r.ok) return;
       const meta = await r.json();
+      curRecId = id;
+      const winTxt = meta.winner && meta.winner !== "tie" ? "winner " + meta.winner + " 👑" : "draw";
+      $("playerTitle").innerHTML = `Replay · ${winTxt} · ${new Date(meta.endedAt).toLocaleString()}`;
+      $("player").style.display = "flex";
+
+      const hasVideo = meta.video && (meta.video.A || meta.video.B);
+      if (hasVideo) {
+        showStage(true);
+        for (const role of ["A", "B"]) {
+          const v = $("vid" + role), cap = $("vcap" + role);
+          if (meta.video[role]) { v.src = `/admin/api/recordings/${id}/video/${role}`; v.style.display = "block"; }
+          else { v.removeAttribute("src"); try { v.load(); } catch {} v.style.display = "none"; }
+          cap.innerHTML = caption(meta, role) + (meta.video[role] ? "" : "<br><span class='muted'>no video for this side</span>");
+        }
+        P = null;
+        return;
+      }
+
+      // Flipbook fallback (synced keyframe reel).
+      showStage(false);
       const mk = (role) => {
         const fr = (meta.frames && meta.frames[role]) || [];
         const urls = fr.map((f) => `/admin/api/recordings/${id}/frame/${role}/${f.i}`);
@@ -383,30 +426,31 @@
       const lastB = B.fr.length ? B.fr[B.fr.length - 1].t : 0;
       const dur = Math.max(lastA, lastB, meta.durationMs || 0, 1000);
       P = { id, A, B, dur, clock: 0, playing: false, speed: Number($("speed").value) || 1, raf: null, last: 0 };
-      $("playerTitle").innerHTML = `Replay · ${meta.winner ? "winner " + meta.winner + " 👑" : "draw"} · ${new Date(meta.endedAt).toLocaleString()}`;
       $("capA").innerHTML = caption(meta, "A");
       $("capB").innerHTML = caption(meta, "B");
       $("scrub").max = Math.round(dur);
       $("camA").style.visibility = A.fr.length ? "visible" : "hidden";
       $("camB").style.visibility = B.fr.length ? "visible" : "hidden";
       renderClock();
-      $("player").style.display = "flex";
       startPlay();
     };
     function closePlayer() {
       pausePlay();
-      P = null;
+      P = null; curRecId = null;
       $("player").style.display = "none";
       $("camA").removeAttribute("src");
       $("camB").removeAttribute("src");
+      for (const role of ["A", "B"]) { const v = $("vid" + role); try { v.pause(); } catch {} v.removeAttribute("src"); try { v.load(); } catch {} }
     }
     $("playerClose").addEventListener("click", closePlayer);
     $("player").addEventListener("click", (e) => { if (e.target.id === "player") closePlayer(); });
     $("playBtn").addEventListener("click", () => { if (!P) return; P.playing ? pausePlay() : startPlay(); });
     $("scrub").addEventListener("input", () => { if (!P) return; pausePlay(); P.clock = Number($("scrub").value); renderClock(); });
     $("speed").addEventListener("change", () => { if (P) P.speed = Number($("speed").value) || 1; });
-    $("delRec").addEventListener("click", () => { if (P) { const id = P.id; closePlayer(); window.delRecording(id); } });
-    document.addEventListener("keydown", (e) => { if (e.key === "Escape" && P) closePlayer(); });
+    const delCur = () => { if (curRecId) { const id = curRecId; closePlayer(); window.delRecording(id); } };
+    $("delRec").addEventListener("click", delCur);
+    $("delRecV").addEventListener("click", delCur);
+    document.addEventListener("keydown", (e) => { if (e.key === "Escape" && $("player").style.display === "flex") closePlayer(); });
 
     // If already authed (valid cookie), jump straight to the dashboard.
     (async () => {
