@@ -70,13 +70,21 @@ function connection() {
   return conn;
 }
 
+// Cache the pot balance so many clients polling the leaderboard don't hammer the
+// RPC (public RPCs rate-limit hard).
+let potCache = { lamports: 0, at: 0 };
+const POT_TTL_MS = 20_000;
+
 export async function getPotLamports() {
   if (!config.potWalletAddress) return 0;
+  if (Date.now() - potCache.at < POT_TTL_MS) return potCache.lamports;
   try {
-    return await connection().getBalance(new PublicKey(config.potWalletAddress), "confirmed");
+    const bal = await connection().getBalance(new PublicKey(config.potWalletAddress), "confirmed");
+    potCache = { lamports: bal, at: Date.now() };
+    return bal;
   } catch (err) {
     console.error("[leaderboard] pot balance failed:", err?.message);
-    return 0;
+    return potCache.lamports; // serve last known on error
   }
 }
 
