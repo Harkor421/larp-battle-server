@@ -159,11 +159,7 @@
   usernameInput.addEventListener("input", updateEnterEnabled);
   walletInput.addEventListener("input", updateEnterEnabled);
   function updateEnterEnabled() {
-    enterBtn.disabled = !(
-      agreeCheck.checked &&
-      usernameInput.value.trim().length >= 2 &&
-      walletInput.value.trim().length >= 32
-    );
+    enterBtn.disabled = !(agreeCheck.checked && usernameInput.value.trim().length >= 2);
   }
   function showProfileError(t) { profileError.textContent = t || ""; }
 
@@ -171,8 +167,8 @@
     const username = usernameInput.value.trim().replace(/\s+/g, " ");
     const wallet = walletInput.value.trim();
     if (username.length < 2) return showProfileError("Enter a username (2+ characters).");
-    if (wallet.length < 32 || wallet.length > 44)
-      return showProfileError("Enter a valid Solana wallet address.");
+    if (wallet && (wallet.length < 32 || wallet.length > 44))
+      return showProfileError("Enter a valid Solana wallet, or leave it blank.");
     showProfileError("");
     enterBtn.disabled = true;
     myProfile = { username, wallet }; // provisional until server confirms
@@ -236,6 +232,7 @@
           app.classList.remove("hidden");
           setScreen("lobby");
           initMedia();
+          startLeaderboardPolling();
         }
         enterBtn.disabled = false;
         break;
@@ -575,6 +572,103 @@
     $("barYou").style.width = "0%";
     $("barThem").style.width = "0%";
   }
+
+  // ---------- Leaderboard rail + payouts ----------
+  const rail = $("rail"), railList = $("railList"), railEmpty = $("railEmpty");
+  const railPotSol = $("railPotSol"), railCountdown = $("railCountdown");
+  const payCountdown = $("payCountdown");
+  const payouts = $("payouts"), payList = $("payList"), payEmpty = $("payEmpty");
+  let lbPollTimer = null, cdTimer = null, payPollTimer = null, nextPayoutAt = 0;
+
+  const solscanAcct = (w) => "https://solscan.io/account/" + encodeURIComponent(w);
+  const solscanTx = (s) => "https://solscan.io/tx/" + encodeURIComponent(s);
+
+  function fmtCountdown(ms) {
+    const s = Math.max(0, Math.floor(ms / 1000));
+    return Math.floor(s / 60) + ":" + String(s % 60).padStart(2, "0");
+  }
+  function tickCountdown() {
+    const t = fmtCountdown(nextPayoutAt - Date.now());
+    railCountdown.textContent = t;
+    if (payCountdown) payCountdown.textContent = t;
+  }
+
+  async function fetchLeaderboard() {
+    try {
+      const d = await (await fetch(apiUrl("/api/leaderboard"))).json();
+      nextPayoutAt = d.nextPayoutAt || nextPayoutAt;
+      railPotSol.textContent = d.pot && d.pot.configured ? d.pot.sol : "—";
+      renderRail(d.entries || []);
+    } catch { /* keep last */ }
+  }
+  function renderRail(entries) {
+    railList.innerHTML = "";
+    railEmpty.style.display = entries.length ? "none" : "block";
+    for (const e of entries) {
+      const row = document.createElement("div");
+      row.className = "rank-row" + (e.rank <= 3 ? " top" + e.rank : "");
+      const rank = document.createElement("div");
+      rank.className = "rank-n"; rank.textContent = e.rank;
+      const who = document.createElement("div"); who.className = "rank-who";
+      const name = document.createElement("div"); name.className = "rank-name"; name.textContent = e.username;
+      who.appendChild(name);
+      if (e.wallet) {
+        const a = document.createElement("a");
+        a.className = "rank-wallet mono"; a.href = solscanAcct(e.wallet);
+        a.target = "_blank"; a.rel = "noopener"; a.title = "View on Solscan";
+        a.textContent = shortWallet(e.wallet);
+        who.appendChild(a);
+      }
+      const sh = document.createElement("div"); sh.className = "rank-share";
+      const pct = document.createElement("div"); pct.className = "rank-pct"; pct.textContent = e.sharePct + "%";
+      const sol = document.createElement("div"); sol.className = "rank-sol"; sol.textContent = e.shareSol + " SOL";
+      sh.appendChild(pct); sh.appendChild(sol);
+      row.appendChild(rank); row.appendChild(who); row.appendChild(sh);
+      railList.appendChild(row);
+    }
+  }
+  function startLeaderboardPolling() {
+    fetchLeaderboard();
+    clearInterval(lbPollTimer); lbPollTimer = setInterval(fetchLeaderboard, 10000);
+    clearInterval(cdTimer); cdTimer = setInterval(tickCountdown, 1000);
+  }
+
+  async function fetchPayouts() {
+    try {
+      const d = await (await fetch(apiUrl("/api/payouts"))).json();
+      nextPayoutAt = d.nextPayoutAt || nextPayoutAt;
+      renderPayouts(d.history || []);
+    } catch { /* keep last */ }
+  }
+  function renderPayouts(history) {
+    payList.innerHTML = "";
+    payEmpty.style.display = history.length ? "none" : "block";
+    for (const p of history) {
+      const batch = document.createElement("div"); batch.className = "pay-batch";
+      const head = document.createElement("div"); head.className = "pay-batch-head";
+      head.textContent = new Date(p.ts).toLocaleString() + " · " + p.totalSol + " SOL to " + p.count + " player" + (p.count === 1 ? "" : "s");
+      batch.appendChild(head);
+      for (const it of p.items || []) {
+        const row = document.createElement("div"); row.className = "pay-row";
+        const who = document.createElement("span"); who.className = "pay-who"; who.textContent = it.username || shortWallet(it.wallet);
+        const amt = document.createElement("span"); amt.className = "pay-amt"; amt.textContent = it.sol + " SOL";
+        const link = document.createElement("a");
+        if (it.sig) { link.href = solscanTx(it.sig); link.target = "_blank"; link.rel = "noopener"; link.className = "pay-link"; link.textContent = "view tx"; }
+        else { link.className = "pay-link muted"; link.textContent = "—"; }
+        row.appendChild(who); row.appendChild(amt); row.appendChild(link);
+        batch.appendChild(row);
+      }
+      payList.appendChild(batch);
+    }
+  }
+  function openPayouts() { payouts.classList.add("open"); fetchPayouts(); clearInterval(payPollTimer); payPollTimer = setInterval(fetchPayouts, 10000); }
+  function closePayouts() { payouts.classList.remove("open"); clearInterval(payPollTimer); }
+
+  $("payoutsBtn").addEventListener("click", openPayouts);
+  $("railPayouts").addEventListener("click", openPayouts);
+  $("payClose").addEventListener("click", closePayouts);
+  $("ranksBtn").addEventListener("click", () => rail.classList.toggle("open"));
+  $("railClose").addEventListener("click", () => rail.classList.remove("open"));
 
   // Hash-gated preview hook (only active with #demo) — lets you drive the UI
   // without a live opponent, e.g. window.LARP_DEMO.verdict('A', {...}). Harmless

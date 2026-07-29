@@ -36,8 +36,8 @@
           <input type="text" id="usernameInput" maxlength="20" placeholder="e.g. DiamondHands" autocomplete="off" spellcheck="false" />
         </label>
         <label class="field">
-          <span class="field-label">Solana wallet</span>
-          <input type="text" id="walletInput" placeholder="Your SOL address" autocomplete="off" spellcheck="false" />
+          <span class="field-label">Solana wallet <span class="field-optional">optional</span></span>
+          <input type="text" id="walletInput" placeholder="Your SOL address (for the pot)" autocomplete="off" spellcheck="false" />
         </label>
         <div class="field-error" id="profileError"></div>
       </div>
@@ -56,6 +56,8 @@
     <header class="topbar">
       <div class="wordmark sm">LARP<span>BATTLE</span></div>
       <div id="status" class="status"></div>
+      <button id="ranksBtn" class="btn btn-ghost btn-sm ranks-toggle">Ranks</button>
+      <button id="payoutsBtn" class="btn btn-ghost btn-sm">Payouts</button>
       <div id="timer" class="timer"><span id="timerText">0:30</span></div>
     </header>
 
@@ -163,6 +165,45 @@
       <a href="/terms.html">Terms</a><span>·</span><a href="/privacy.html">Privacy</a>
     </footer>
   </main>
+
+  <!-- Live leaderboard rail (right side) -->
+  <aside id="rail" class="rail" aria-label="Live leaderboard">
+    <div class="rail-head">
+      <div class="rail-title">$LARP&nbsp;<span>LEADERBOARD</span></div>
+      <button id="railClose" class="icon-btn" aria-label="Close">×</button>
+    </div>
+    <div class="rail-pot">
+      <div class="pot-sol"><span id="railPotSol">—</span><span class="pot-unit">SOL</span></div>
+      <div class="pot-label">prize pot</div>
+      <div class="pot-next">next payout <span id="railCountdown" class="mono">—:—</span></div>
+    </div>
+    <div class="rail-list" id="railList"></div>
+    <div class="rail-empty" id="railEmpty">No players ranked yet.<br />Win a battle to climb the board.</div>
+    <button id="railPayouts" class="btn btn-ghost btn-sm rail-payouts-btn">View payouts &amp; how it works</button>
+  </aside>
+
+  <!-- Payouts modal -->
+  <section id="payouts" class="pay">
+    <div class="pay-modal">
+      <button id="payClose" class="icon-btn pay-close" aria-label="Close">×</button>
+      <div class="pay-head">
+        <div class="pay-title">$LARP Payouts</div>
+        <div class="pay-next">next payout in <span id="payCountdown" class="mono">—:—</span></div>
+      </div>
+      <div class="pay-explain">
+        <h3>How the $LARP pot is shared</h3>
+        <ol>
+          <li>Creator &amp; trading fees from the <strong>$LARP</strong> coin collect into the prize-pot wallet.</li>
+          <li>Every <strong>5 minutes</strong> the pot is split among ranked players — proportional to their <strong>points</strong>.</li>
+          <li>Your share = your points ÷ every player's points. <strong>Win battles to earn more points and a bigger cut.</strong></li>
+          <li>Payouts land straight in your Solana wallet. Add a wallet to take part.</li>
+        </ol>
+      </div>
+      <div class="pay-list-head"><span>Recent payouts</span></div>
+      <div class="pay-list" id="payList"></div>
+      <div class="pay-empty" id="payEmpty">No payouts yet — the first one lands after the pot is funded.</div>
+    </div>
+  </section>
 
   <script src="config.js"></script>
   <script src="app.js"></script>
