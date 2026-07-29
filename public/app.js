@@ -467,6 +467,7 @@
       let audioTracks = [];
       if (AC) {
         recAudioCtx = new AC();
+        if (recAudioCtx.state === "suspended") recAudioCtx.resume().catch(() => {});
         const dest = recAudioCtx.createMediaStreamDestination();
         const la = localStream.getAudioTracks();
         if (la[0]) recAudioCtx.createMediaStreamSource(new MediaStream([la[0]])).connect(dest);

@@ -272,7 +272,7 @@ body {
 .gate-check a:hover { text-decoration: underline; }
 
 /* ---------- App shell ---------- */
-.app { max-width: 1140px; margin: 0 auto; padding: 20px 18px 40px; animation: fade 0.5s var(--ease); }
+.app { max-width: 1140px; margin: 0 auto; padding: 20px 18px 40px; animation: fade 0.5s var(--ease); display: flex; flex-direction: column; min-height: 100dvh; }
 .topbar { display: flex; align-items: center; gap: 16px; padding-bottom: 20px; }
 .status { flex: 1; color: var(--muted); font-size: 0.92rem; min-height: 1.2em; transition: color 0.2s; }
 .timer {
@@ -290,7 +290,14 @@ body {
 #app[data-screen="lobby"] .tile-local { aspect-ratio: 16 / 10; }
 .howto { max-width: 900px; margin: 22px auto 0; border-radius: 22px; }
 
-.stage { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; transition: filter 0.5s var(--ease); }
+.stage { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; transition: filter 0.5s var(--ease); position: relative; }
+/* Center the battle stage vertically so the UI isn't top-heavy with dead space */
+#app[data-screen="connecting"] .stage,
+#app[data-screen="battle"] .stage,
+#app[data-screen="judging"] .stage { margin-top: auto; }
+#app[data-screen="connecting"] .controls,
+#app[data-screen="battle"] .controls,
+#app[data-screen="judging"] .controls { margin-bottom: auto; }
 #app[data-screen="lobby"] .stage, #app[data-screen="searching"] .stage { grid-template-columns: 1fr; }
 /* On verdict, the cameras stay LIVE behind the modal (you still hear your
    opponent); the modal's backdrop-filter blurs them. */
