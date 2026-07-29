@@ -4,15 +4,20 @@ import path from "node:path";
 import sharp from "sharp";
 import { config } from "./config.js";
 import { sampleEvenly } from "./frames.js";
+import { col, mongoEnabled } from "./db.js";
 
 // Recordings live on the (persistent) data volume:
 //   <dataDir>/recordings/
-//     index.json              — newest-first summary list for the admin grid
+//     index.json              — newest-first summary list (file fallback)
 //     <battleId>/
 //       meta.json             — players, verdict, per-frame timing offsets
-//       A_000.jpg … A_0NN.jpg — player A camera frames
-//       B_000.jpg … B_0NN.jpg — player B camera frames
-// path.resolve so served files are always absolute (res.sendFile requires it).
+//       A_000.jpg … A_0NN.jpg — player A camera keyframes (deduped)
+//       B_000.jpg … B_0NN.jpg — player B camera keyframes
+//       A.webm / B.webm       — full video+audio clip uploaded by each client
+// When MongoDB is enabled, the newest-first summary list is ALSO mirrored to the
+// `recordings` collection so the admin list survives a volume reset (the media
+// files themselves still require the volume). path.resolve keeps served paths
+// absolute (res.sendFile requires it).
 const ROOT = path.resolve(config.dataDir, "recordings");
 const INDEX = path.join(ROOT, "index.json");
 const SHARP_OPTS = { limitInputPixels: 40_000_000 };
@@ -60,6 +65,50 @@ function playerSummary(meta, role) {
     score: v?.score ?? null,
     total: v?.total_value_usd ?? null,
   };
+}
+
+function summaryEntry(meta) {
+  return {
+    id: meta.id,
+    endedAt: meta.endedAt,
+    durationMs: meta.durationMs,
+    winner: meta.winner,
+    A: playerSummary(meta, "A"),
+    B: playerSummary(meta, "B"),
+    aFrames: meta.frames.A.length,
+    bFrames: meta.frames.B.length,
+    video: { A: hasVideo(meta.id, "A"), B: hasVideo(meta.id, "B") },
+  };
+}
+
+function hasVideo(id, role) {
+  if (role !== "A" && role !== "B") return false;
+  return fs.existsSync(path.join(ROOT, id, `${role}.webm`));
+}
+
+function mongoUpsertSummary(entry) {
+  const c = col("recordings");
+  if (!c) return;
+  c.updateOne({ _id: entry.id }, { $set: { ...entry } }, { upsert: true }).catch((err) =>
+    console.error("[rec] mongo upsert failed:", err?.message)
+  );
+}
+
+/** Load the recording summary list from Mongo into index.json on startup. */
+export async function initRecordingsStore() {
+  if (!mongoEnabled()) return;
+  try {
+    const c = col("recordings");
+    const docs = await c.find({}).sort({ endedAt: -1 }).limit(config.maxRecordings).toArray();
+    if (docs.length) {
+      writeIndex(docs.map((d) => ({ ...d, id: d._id, _id: undefined })));
+      console.log(`[rec] loaded ${docs.length} recording summar${docs.length === 1 ? "y" : "ies"} from MongoDB`);
+    } else {
+      for (const e of readIndex()) mongoUpsertSummary(e);
+    }
+  } catch (err) {
+    console.error("[rec] mongo init failed (using files):", err?.message);
+  }
 }
 
 /**
@@ -112,18 +161,11 @@ export async function saveRecording(battle) {
 
     await fsp.writeFile(path.join(dir, "meta.json"), JSON.stringify(meta, null, 2));
 
+    const entry = summaryEntry(meta); // picks up any webm already uploaded
     const list = readIndex().filter((r) => r.id !== battle.id);
-    list.unshift({
-      id: battle.id,
-      endedAt,
-      durationMs: meta.durationMs,
-      winner: meta.winner,
-      A: playerSummary(meta, "A"),
-      B: playerSummary(meta, "B"),
-      aFrames: meta.frames.A.length,
-      bFrames: meta.frames.B.length,
-    });
+    list.unshift(entry);
     writeIndex(list);
+    mongoUpsertSummary(entry);
     await prune(list);
 
     console.log(
@@ -134,6 +176,41 @@ export async function saveRecording(battle) {
   }
 }
 
+/**
+ * Store the full video+audio clip a client uploaded for its side of a battle.
+ * Arrives shortly after saveRecording (both start on match end), so this patches
+ * the already-written summary/meta to flag the video as available.
+ */
+export async function saveRecordingVideo(battle, role, buf, mime = "webm") {
+  const id = battle.id;
+  if (!isValidId(id) || (role !== "A" && role !== "B")) throw new Error("bad target");
+  const dir = path.join(ROOT, id);
+  await fsp.mkdir(dir, { recursive: true });
+  const ext = mime === "mp4" ? "mp4" : "webm";
+  await fsp.writeFile(path.join(dir, `${role}.${ext}`), buf);
+
+  // Patch meta.json (best-effort) so getRecordingMeta reflects the video.
+  try {
+    const metaPath = path.join(dir, "meta.json");
+    const meta = JSON.parse(await fsp.readFile(metaPath, "utf8"));
+    meta.video = { ...(meta.video || {}), [role]: true };
+    meta.videoMime = ext;
+    await fsp.writeFile(metaPath, JSON.stringify(meta, null, 2));
+  } catch {
+    /* meta not written yet — saveRecording's summaryEntry will detect the file */
+  }
+
+  // Patch the summary list + Mongo doc.
+  const list = readIndex();
+  const item = list.find((r) => r.id === id);
+  if (item) {
+    item.video = { ...(item.video || {}), [role]: true };
+    writeIndex(list);
+  }
+  col("recordings")?.updateOne({ _id: id }, { $set: { [`video.${role}`]: true } }, { upsert: false }).catch(() => {});
+  console.log(`[rec] video saved ${id} ${role} (${buf.length} bytes)`);
+}
+
 async function prune(list) {
   if (list.length <= config.maxRecordings) return;
   const keep = list.slice(0, config.maxRecordings);
@@ -142,6 +219,7 @@ async function prune(list) {
   for (const r of remove) {
     try {
       await fsp.rm(path.join(ROOT, r.id), { recursive: true, force: true });
+      col("recordings")?.deleteOne({ _id: r.id }).catch(() => {});
     } catch (err) {
       console.error("[rec] prune failed:", err?.message);
     }
@@ -155,7 +233,9 @@ export function listRecordings() {
 export function getRecordingMeta(id) {
   if (!isValidId(id)) return null;
   try {
-    return JSON.parse(fs.readFileSync(path.join(ROOT, id, "meta.json"), "utf8"));
+    const meta = JSON.parse(fs.readFileSync(path.join(ROOT, id, "meta.json"), "utf8"));
+    meta.video = { A: hasVideo(id, "A"), B: hasVideo(id, "B") };
+    return meta;
   } catch {
     return null;
   }
@@ -172,11 +252,24 @@ export function getFramePath(id, role, idx) {
   return fs.existsSync(p) ? p : null;
 }
 
+/** Absolute path to a recording's webm/mp4 video for a role, or null. */
+export function getVideoPath(id, role) {
+  if (!isValidId(id) || (role !== "A" && role !== "B")) return null;
+  for (const ext of ["webm", "mp4"]) {
+    const p = path.join(ROOT, id, `${role}.${ext}`);
+    if (p === path.normalize(p) && p.startsWith(ROOT + path.sep) && fs.existsSync(p)) {
+      return { path: p, mime: ext === "mp4" ? "video/mp4" : "video/webm" };
+    }
+  }
+  return null;
+}
+
 export async function deleteRecording(id) {
   if (!isValidId(id)) return false;
   try {
     await fsp.rm(path.join(ROOT, id), { recursive: true, force: true });
     writeIndex(readIndex().filter((r) => r.id !== id));
+    col("recordings")?.deleteOne({ _id: id }).catch(() => {});
     return true;
   } catch {
     return false;

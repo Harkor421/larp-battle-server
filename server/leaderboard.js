@@ -11,6 +11,7 @@ import {
   LAMPORTS_PER_SOL,
 } from "@solana/web3.js";
 import { config } from "./config.js";
+import { col, mongoEnabled } from "./db.js";
 
 const FILE = path.join(config.dataDir, "leaderboard.json");
 const PAYOUTS_FILE = path.join(config.dataDir, "payouts.json");
@@ -39,6 +40,56 @@ function persist() {
   }, 500);
 }
 
+// Mirror one wallet's entry into MongoDB (fire-and-forget; files remain the
+// synchronous backup on the volume).
+function mongoUpsert(wallet, e) {
+  const c = col("leaderboard");
+  if (!c) return;
+  c.updateOne({ _id: wallet }, { $set: { ...e } }, { upsert: true }).catch((err) =>
+    console.error("[leaderboard] mongo upsert failed:", err?.message)
+  );
+}
+
+/**
+ * Load durable state from MongoDB on startup (when enabled). If Mongo already
+ * holds data it becomes the source of truth (survives volume loss); if Mongo is
+ * empty, we seed it from whatever the JSON files loaded. Falls back silently to
+ * files when Mongo is disabled/unreachable.
+ */
+export async function initLeaderboardStore() {
+  if (!mongoEnabled()) return;
+  try {
+    const lc = col("leaderboard");
+    const docs = await lc.find({}).toArray();
+    if (docs.length) {
+      board.clear();
+      for (const d of docs) {
+        board.set(d._id, {
+          username: d.username || "Anon",
+          points: d.points || 0,
+          wins: d.wins || 0,
+          battles: d.battles || 0,
+          totalReceivedLamports: d.totalReceivedLamports || 0,
+        });
+      }
+      console.log(`[leaderboard] loaded ${board.size} entr${board.size === 1 ? "y" : "ies"} from MongoDB`);
+    } else if (board.size) {
+      for (const [w, e] of board) mongoUpsert(w, e);
+      console.log(`[leaderboard] seeded MongoDB from ${board.size} file entr${board.size === 1 ? "y" : "ies"}`);
+    }
+
+    const pc = col("payouts");
+    const ph = await pc.find({}).sort({ ts: -1 }).limit(PAYOUT_HISTORY_MAX).toArray();
+    if (ph.length) {
+      payoutHistory = ph.map((d) => ({ ts: d.ts, totalSol: d.totalSol, count: d.count, items: d.items || [] }));
+    } else if (payoutHistory.length) {
+      for (const p of payoutHistory) pc.insertOne(p).catch(() => {});
+    }
+  } catch (err) {
+    console.error("[leaderboard] mongo init failed (using files):", err?.message);
+  }
+}
+
 /**
  * Award points for a finished battle. Only players with a wallet accrue points
  * (the wallet is the payout identity). Call once per player.
@@ -61,6 +112,7 @@ export function recordBattle({ wallet, username, score, won }) {
   }
   board.set(wallet, e);
   persist();
+  mongoUpsert(wallet, e);
 }
 
 // ---- Pot balance (read-only) ----
@@ -91,8 +143,9 @@ export async function getPotLamports() {
 // ---- Leaderboard view with pot shares ----
 export async function getLeaderboard() {
   const potLamports = await getPotLamports();
-  const bufferLamports = Math.floor(config.potLeaveSol * LAMPORTS_PER_SOL);
-  const poolLamports = Math.max(0, potLamports - bufferLamports);
+  // The distributable prize pool is a fixed fraction (default 80%) of the pot
+  // wallet balance; the remaining fraction stays in the wallet.
+  const poolLamports = Math.max(0, Math.floor(potLamports * config.potPayoutFraction));
 
   const rows = [...board.entries()]
     .map(([wallet, e]) => ({ wallet, ...e }))
@@ -124,6 +177,7 @@ export async function getLeaderboard() {
       lamports: potLamports,
       sol: +(potLamports / LAMPORTS_PER_SOL).toFixed(4),
       poolSol: +(poolLamports / LAMPORTS_PER_SOL).toFixed(4),
+      payoutPct: Math.round(config.potPayoutFraction * 100),
       configured: !!config.potWalletAddress,
     },
     totalPoints,
@@ -209,7 +263,10 @@ export async function distribute({ confirm = false } = {}) {
       txids.push(sig);
       for (const p of batch) {
         const e = board.get(p.to);
-        if (e) e.totalReceivedLamports = (e.totalReceivedLamports || 0) + p.lamports;
+        if (e) {
+          e.totalReceivedLamports = (e.totalReceivedLamports || 0) + p.lamports;
+          mongoUpsert(p.to, e);
+        }
         items.push({ to: p.to, username: p.username, sol: +(p.lamports / LAMPORTS_PER_SOL).toFixed(4), sig });
       }
     } catch (err) {
@@ -255,14 +312,18 @@ async function runScheduledPayout() {
     const result = await distribute({ confirm: config.autoPayoutEnabled });
     // Only record REAL payouts (with on-chain sigs) — dry-runs don't clutter the page.
     if (result.ok && !result.dryRun && result.count > 0) {
-      payoutHistory.unshift({
+      const record = {
         ts: Date.now(),
         totalSol: result.distributedSol,
         count: result.count,
         items: result.items.map((x) => ({ username: x.username, wallet: x.to, sol: x.sol, sig: x.sig })),
-      });
+      };
+      payoutHistory.unshift(record);
       if (payoutHistory.length > PAYOUT_HISTORY_MAX) payoutHistory.length = PAYOUT_HISTORY_MAX;
       persistPayouts();
+      col("payouts")?.insertOne(record).catch((err) =>
+        console.error("[payout] mongo insert failed:", err?.message)
+      );
     }
   } catch (err) {
     console.error("[payout] scheduled run failed:", err?.message);
