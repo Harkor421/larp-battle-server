@@ -38,12 +38,15 @@ export function validateUsername(raw) {
 }
 
 /**
- * Validate a Solana address (base58-encoded 32-byte public key).
+ * Validate an OPTIONAL Solana address (base58-encoded 32-byte public key).
+ * Empty / missing is allowed and returns an empty value.
  * @returns {{ ok: true, value: string } | { ok: false, reason: string }}
  */
 export function validateSolanaWallet(raw) {
-  if (typeof raw !== "string" || !raw)
-    return { ok: false, reason: "Enter your Solana wallet address." };
+  if (raw == null || (typeof raw === "string" && raw.trim() === ""))
+    return { ok: true, value: "" }; // optional — no wallet is fine
+  if (typeof raw !== "string")
+    return { ok: false, reason: "That doesn't look like a Solana address." };
   const addr = raw.trim();
   if (addr.length < 32 || addr.length > 44)
     return { ok: false, reason: "That doesn't look like a Solana address." };

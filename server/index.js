@@ -10,6 +10,7 @@ import { config } from "./config.js";
 import { mountAdmin } from "./admin.js";
 import { judgeBattle, moderateFrame } from "./judge.js";
 import { validateUsername, validateSolanaWallet } from "./profile.js";
+import { recordBattle, getLeaderboard, getPayouts, startPayoutScheduler } from "./leaderboard.js";
 import {
   averageHash,
   hammingDistance,
@@ -219,6 +220,12 @@ async function endBattle(battle) {
   for (const role of ["A", "B"]) {
     send(battle.players[role].ws, { type: "verdict", role, verdict });
   }
+  // Award leaderboard points (players with a wallet accrue points → pot share).
+  for (const role of ["A", "B"]) {
+    const p = battle.players[role];
+    const score = verdict.players?.find((x) => x.player === role)?.score || 0;
+    recordBattle({ wallet: p.wallet, username: p.username, score, won: verdict.winner === role });
+  }
   // Keep the battle around briefly so late frame uploads 404 cleanly and
   // reports can still grab evidence, then free the memory.
   battle.cleanupTimer = setTimeout(() => destroyBattle(battle.id), 120_000);
@@ -418,8 +425,8 @@ wss.on("connection", (ws, req) => {
       }
       case "join_queue": {
         if (bans.has(ws.ip)) return;
-        if (!ws.username || !ws.wallet) {
-          send(ws, { type: "profile_error", reason: "Set your username and Solana wallet first." });
+        if (!ws.username) {
+          send(ws, { type: "profile_error", reason: "Set your username first." });
           return;
         }
         leaveBattle(ws);
@@ -573,6 +580,20 @@ app.get("/healthz", (_req, res) => {
   });
 });
 
+// Public leaderboard: pot balance + each player's points and proportional share.
+app.get("/api/leaderboard", async (_req, res) => {
+  try {
+    res.json(await getLeaderboard());
+  } catch {
+    res.status(500).json({ error: "leaderboard unavailable" });
+  }
+});
+
+// Public payouts: next-payout countdown + history of on-chain distributions.
+app.get("/api/payouts", (_req, res) => {
+  res.json(getPayouts());
+});
+
 // Note: TURN credentials are handed out only inside the authenticated `matched`
 // WebSocket message (see tryMatch), never via an open HTTP endpoint — otherwise
 // anyone could mint relay credentials and use the TURN server as a free proxy.
@@ -642,4 +663,5 @@ app.post(
 
 server.listen(config.port, () => {
   console.log(`larp-battle listening on http://localhost:${config.port}`);
+  startPayoutScheduler();
 });

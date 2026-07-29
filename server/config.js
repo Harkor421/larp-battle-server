@@ -43,6 +43,27 @@ export const config = {
   // Admin panel (disabled unless ADMIN_TOKEN is set)
   adminToken: process.env.ADMIN_TOKEN || "",
 
+  // Leaderboard / SOL pot
+  // Public key of the wallet that holds the prize pot (balance read via RPC).
+  potWalletAddress: process.env.POT_WALLET_ADDRESS || "",
+  solanaRpcUrl: process.env.SOLANA_RPC_URL || "https://api.mainnet-beta.solana.com",
+  // SOL left in the pot wallet as a fee/rent buffer, not distributed.
+  potLeaveSol: Number(process.env.POT_LEAVE_SOL ?? "0.02") || 0.02,
+  // Distributor keypair (the pot wallet's secret). ENV ONLY — never hardcode.
+  // Without it, distribution runs in dry-run (no SOL moves).
+  distributorSecretBase58: process.env.DISTRIBUTOR_SECRET_BASE58 || "",
+  distributorSecretJson: process.env.DISTRIBUTOR_SECRET_JSON || "",
+  maxRecipientsPerTx: num("MAX_RECIPIENTS_PER_TX", 16),
+  maxLeaderboardRecipients: num("MAX_LEADERBOARD_RECIPIENTS", 200),
+  // Points: winner gains round(score × mult); everyone who plays gets participation.
+  winPointsMult: num("WIN_POINTS_MULT", 10),
+  participationPoints: num("PARTICIPATION_POINTS", 1),
+  // Payouts: the pot is split among ranked players on this cadence. Real SOL
+  // only moves when AUTO_PAYOUT=true AND a distributor secret is configured;
+  // otherwise the timer runs but no transfers happen.
+  distributeEveryMs: num("DISTRIBUTE_EVERY_MS", 300_000), // 5 minutes
+  autoPayoutEnabled: process.env.AUTO_PAYOUT === "true",
+
   // Frames (high quality for accurate item identification)
   maxFrameBytes: num("MAX_FRAME_BYTES", 2_000_000),
   frameMaxEdge: num("FRAME_MAX_EDGE", 1280),

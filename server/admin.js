@@ -2,6 +2,7 @@ import crypto from "node:crypto";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { config } from "./config.js";
+import { getLeaderboard, distribute } from "./leaderboard.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -190,6 +191,22 @@ export function mountAdmin(app, express, deps) {
       }
     }
     res.json({ ok: true });
+  });
+
+  // Leaderboard snapshot for the admin dashboard.
+  app.get("/admin/api/leaderboard", requireAuth, async (_req, res) => {
+    res.json(await getLeaderboard());
+  });
+
+  // Distribute the pot proportionally to points. Dry-run unless the request
+  // body has confirm:true AND a distributor secret is configured server-side.
+  app.post("/admin/api/distribute", express.json(), requireAuth, async (req, res) => {
+    try {
+      const result = await distribute({ confirm: req.body?.confirm === true });
+      res.json(result);
+    } catch (err) {
+      res.status(500).json({ ok: false, error: err?.message || "distribute failed" });
+    }
   });
 
   // Sweep expired sessions occasionally.
