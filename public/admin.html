@@ -406,8 +406,19 @@
         showStage(true);
         for (const role of ["A", "B"]) {
           const v = $("vid" + role), cap = $("vcap" + role);
-          if (meta.video[role]) { v.src = `/admin/api/recordings/${id}/video/${role}`; v.style.display = "block"; }
-          else { v.removeAttribute("src"); try { v.load(); } catch {} v.style.display = "none"; }
+          if (meta.video[role]) {
+            v.src = `/admin/api/recordings/${id}/video/${role}`;
+            v.style.display = "block";
+            // MediaRecorder webm has no duration header (duration=Infinity), which
+            // breaks the seek bar. Force the browser to compute it by seeking to
+            // the end once, then snap back to 0.
+            v.onloadedmetadata = () => {
+              if (v.duration === Infinity || isNaN(v.duration)) {
+                v.currentTime = 1e101;
+                v.ontimeupdate = () => { v.ontimeupdate = null; v.currentTime = 0; };
+              }
+            };
+          } else { v.removeAttribute("src"); try { v.load(); } catch {} v.style.display = "none"; }
           cap.innerHTML = caption(meta, role) + (meta.video[role] ? "" : "<br><span class='muted'>no video for this side</span>");
         }
         P = null;
