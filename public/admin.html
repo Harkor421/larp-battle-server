@@ -330,7 +330,7 @@
       const p = meta.players[role] || {};
       const v = (meta.verdict && meta.verdict.players || []).find((x) => x.player === role);
       const won = meta.winner === role;
-      const sc = v ? `<span class="sc">${Number(v.score).toFixed(1)}/10</span>${v.total != null ? " · $" + Number(v.total).toLocaleString() : ""}` : "";
+      const sc = v ? `<span class="sc">${Number(v.score).toFixed(1)}/10</span>${v.total_value_usd != null ? " · $" + Number(v.total_value_usd).toLocaleString() : ""}` : "";
       return `${flag(p.country)} <b>${esc(p.username)}</b> · ${role}${won ? " 👑" : ""}<br>${esc(shortWallet(p.wallet)) || "no wallet"}<br>${sc}`;
     }
     function frameIdxAt(fr, clock) {
