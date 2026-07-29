@@ -131,6 +131,24 @@ body {
 .wordmark.sm { font-size: 1.12rem; }
 .wordmark.sm { text-shadow: 0 1px 0 rgba(255,255,255,0.4), 0 2px 4px rgba(0,0,0,0.5), 0 0 18px rgba(47,210,114,0.16); }
 
+/* Logo image (top-left header + gate hero) */
+.brand-logo {
+  display: block;
+  height: 42px;
+  width: 42px;
+  border-radius: 50%;
+  object-fit: cover;
+  box-shadow: 0 2px 10px rgba(0,0,0,0.5), 0 0 22px rgba(47,210,114,0.28);
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+.brand-logo:hover { transform: scale(1.06); box-shadow: 0 4px 16px rgba(0,0,0,0.55), 0 0 30px rgba(47,210,114,0.42); }
+.brand-logo-lg {
+  height: 132px;
+  width: 132px;
+  margin: 0 auto 18px;
+  box-shadow: 0 8px 30px rgba(0,0,0,0.6), 0 0 46px rgba(47,210,114,0.32);
+}
+
 /* ---------- Buttons (glossy puffy pills) ---------- */
 .btn {
   position: relative; overflow: hidden;
