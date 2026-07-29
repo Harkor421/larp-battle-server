@@ -58,7 +58,7 @@ function playerSummary(meta, role) {
     wallet: p.wallet || "",
     country: p.country || "??",
     score: v?.score ?? null,
-    total: v?.total ?? null,
+    total: v?.total_value_usd ?? null,
   };
 }
 
